@@ -1,0 +1,17 @@
+# Secrets — never commit these
+.env
+credentials.json
+token.json
+
+# Temporary processing files
+.tmp/*
+!.tmp/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+service-account.json
