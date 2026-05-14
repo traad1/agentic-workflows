@@ -15,3 +15,10 @@ __pycache__/
 # macOS
 .DS_Store
 service-account.json
+
+# Streamlit
+.streamlit/secrets.toml
+
+# App data (user-entered prices — kept locally, not in repo)
+VG Platform/dashboard/data/*.xlsx
+VG Platform/dashboard/data/*.csv
