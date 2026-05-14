@@ -4,8 +4,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
-import os
 from pathlib import Path
+from sheets_backend import load_prices, save_row, delete_row, backend_label
 
 st.set_page_config(
     page_title="Vidya Coffee Terminal",
@@ -13,12 +13,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-# ── Paths ─────────────────────────────────────────────────────────────────────
-BASE_DIR   = Path(__file__).parent
-DATA_DIR   = BASE_DIR / "data"
-PRICES_XLS = DATA_DIR / "weekly_prices.xlsx"
-DATA_DIR.mkdir(exist_ok=True)
 
 # ── Styling: dark terminal theme ────────────────────────────────────────────
 st.markdown("""
@@ -95,66 +89,6 @@ INTERVALS = {
 KC_TO_MT = 22.0462  # cents/lb → USD/MT
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-
-# Excel sheet names
-SHEET_WEEKLY = "Weekly Prices"
-
-# ── Excel helpers ─────────────────────────────────────────────────────────────
-def _init_excel():
-    """Create the workbook with correct columns if it doesn't exist."""
-    if PRICES_XLS.exists():
-        return
-    cols = [
-        "week_of",          # ISO date of the Monday
-        "day",              # Monday–Friday
-        "session",          # Open / Settlement
-        "kc_cents_lb",      # Arabica ¢/lb
-        "rc_usd_mt",        # Robusta USD/MT
-        "rc_cents_lb",      # Robusta converted to ¢/lb
-        "spread_cents_lb",  # KC − RC_converted (¢/lb)
-        "notes",
-    ]
-    df = pd.DataFrame(columns=cols)
-    with pd.ExcelWriter(PRICES_XLS, engine="openpyxl") as w:
-        df.to_excel(w, sheet_name=SHEET_WEEKLY, index=False)
-
-def load_prices() -> pd.DataFrame:
-    _init_excel()
-    try:
-        df = pd.read_excel(PRICES_XLS, sheet_name=SHEET_WEEKLY, dtype={"week_of": str})
-        df["week_of"] = pd.to_datetime(df["week_of"], errors="coerce")
-        return df
-    except Exception:
-        return pd.DataFrame()
-
-def save_row(row: dict):
-    """Append or overwrite a row identified by (week_of, day, session)."""
-    _init_excel()
-    df = load_prices()
-    mask = (
-        (df["week_of"] == row["week_of"]) &
-        (df["day"]     == row["day"])     &
-        (df["session"] == row["session"])
-    )
-    if mask.any():
-        for col, val in row.items():
-            df.loc[mask, col] = val
-    else:
-        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-    df = df.sort_values(["week_of", "day", "session"]).reset_index(drop=True)
-    with pd.ExcelWriter(PRICES_XLS, engine="openpyxl") as w:
-        df.to_excel(w, sheet_name=SHEET_WEEKLY, index=False)
-
-def delete_row(week_of, day, session):
-    df = load_prices()
-    mask = (
-        (df["week_of"] == pd.Timestamp(week_of)) &
-        (df["day"]     == day)                    &
-        (df["session"] == session)
-    )
-    df = df[~mask].reset_index(drop=True)
-    with pd.ExcelWriter(PRICES_XLS, engine="openpyxl") as w:
-        df.to_excel(w, sheet_name=SHEET_WEEKLY, index=False)
 
 # ── Market data helpers ───────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
@@ -249,7 +183,11 @@ with st.sidebar:
     if st.button("Refresh Data"):
         st.cache_data.clear()
         st.rerun()
+    st.markdown("---")
+    _bl = backend_label()
+    _bl_color = "#00e676" if _bl == "Google Sheets" else "#ffeb3b"
     st.markdown(
+        f"<small style='color:{_bl_color}'>&#9679; {_bl}</small><br>"
         f"<small style='color:#4a5568'>Last update: {datetime.now().strftime('%H:%M:%S')}</small>",
         unsafe_allow_html=True,
     )
