@@ -175,7 +175,7 @@ with st.sidebar:
         "Navigate",
         ["Market Overview", "Arabica Deep Dive", "Robusta Deep Dive",
          "Spreads & Correlations", "Basis Calculator",
-         "Weekly Price Entry", "Weekly Price History",
+         "Weekly Price Entry", "Daily Price History",
          "TradingView Charts"],
         label_visibility="collapsed",
     )
@@ -769,182 +769,331 @@ elif page == "Weekly Price Entry":
             st.info("Enter both KC and RC settlements for the same expiry to see the spread.")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PAGE: WEEKLY PRICE HISTORY
+# PAGE: DAILY PRICE HISTORY
 # ═════════════════════════════════════════════════════════════════════════════
-elif page == "Weekly Price History":
-    st.markdown('<div class="section-label">WEEKLY PRICE HISTORY — MANUALLY ENTERED DATA</div>', unsafe_allow_html=True)
+elif page == "Daily Price History":
+    st.markdown('<div class="section-label">DAILY SETTLEMENT HISTORY — NY ARABICA vs LONDON ROBUSTA</div>', unsafe_allow_html=True)
 
-    df_all = load_prices()
+    df_all = load_settlements()
 
-    if df_all.empty or df_all["kc_cents_lb"].isna().all():
-        st.info("No data yet. Use **Weekly Price Entry** to start logging prices.")
+    if df_all.empty or "settlement" not in df_all.columns:
+        st.info("No data yet. Use **Daily Price Entry** to start logging settlements.")
     else:
-        df_all = df_all.dropna(subset=["kc_cents_lb"])
-        df_all["week_label"] = df_all["week_of"].dt.strftime("W/O %b %d")
+        df_all = df_all.dropna(subset=["settlement"])
+        df_all["trade_date"] = pd.to_datetime(df_all["trade_date"])
 
-        # ── Filters ──────────────────────────────────────────────────────────
-        fcol1, fcol2 = st.columns(2)
-        with fcol1:
-            weeks = sorted(df_all["week_of"].dropna().unique())
-            week_labels = [pd.Timestamp(w).strftime("W/O %b %d, %Y") for w in weeks]
-            n_weeks = st.slider("Weeks to show", min_value=1, max_value=max(len(weeks), 1),
-                                value=min(12, len(weeks)))
-        with fcol2:
-            session_filter = st.selectbox("Session", ["Settlement", "Open", "Both"])
+        # ── Filters bar ──────────────────────────────────────────────────────
+        f1, f2, f3 = st.columns([2, 2, 2])
 
-        recent_weeks = sorted(weeks)[-n_weeks:]
-        df_plot = df_all[df_all["week_of"].isin(recent_weeks)].copy()
-        if session_filter != "Both":
-            df_plot = df_plot[df_plot["session"] == session_filter]
+        all_expiries = sorted(df_all["expiry_code"].dropna().unique())
+        with f1:
+            sel_expiry = st.selectbox("Expiry", all_expiries,
+                                      index=0 if all_expiries else 0)
+        with f2:
+            all_dates = sorted(df_all["trade_date"].dropna().unique())
+            n_days = st.slider("Days to show", min_value=5,
+                               max_value=max(len(all_dates), 5),
+                               value=min(30, len(all_dates)))
+        with f3:
+            show_ma20 = st.checkbox("MA 20", value=True)
+            show_ma50 = st.checkbox("MA 50", value=True)
 
-        # ── Settlements for weekly line charts ───────────────────────────────
-        settle_df = df_plot[df_plot["session"] == "Settlement"].copy()
-        settle_df = settle_df.sort_values(["week_of", "day"])
+        # Filter to selected expiry and last n days
+        df_exp = df_all[df_all["expiry_code"] == sel_expiry].copy()
+        recent_dates = sorted(df_exp["trade_date"].dropna().unique())[-n_days:]
+        df_exp = df_exp[df_exp["trade_date"].isin(recent_dates)].sort_values("trade_date")
 
-        # Build a composite x-axis label: "W/O Jan 06 — Mon", etc.
-        day_order = {d: i for i, d in enumerate(DAYS)}
-        settle_df["day_order"] = settle_df["day"].map(day_order)
-        settle_df = settle_df.sort_values(["week_of", "day_order"])
-        settle_df["x_label"] = settle_df["week_label"] + " · " + settle_df["day"]
+        kc = df_exp[df_exp["market"] == "KC"].set_index("trade_date").sort_index()
+        rc = df_exp[df_exp["market"] == "RC"].set_index("trade_date").sort_index()
 
-        if not settle_df.empty:
-            # ── Chart 1: KC and RC settlements ───────────────────────────────
-            st.markdown('<div class="section-label">SETTLEMENT PRICES — KC & RC (¢/lb)</div>', unsafe_allow_html=True)
-            fig1 = go.Figure()
-            fig1.add_trace(go.Scatter(
-                x=settle_df["x_label"], y=settle_df["kc_cents_lb"],
-                mode="lines+markers",
-                line=dict(color="#00aaff", width=2),
-                marker=dict(size=6, color="#00aaff"),
-                name="Arabica KC (¢/lb)",
-            ))
-            fig1.add_trace(go.Scatter(
-                x=settle_df["x_label"], y=settle_df["rc_cents_lb"],
-                mode="lines+markers",
-                line=dict(color="#ff9800", width=2),
-                marker=dict(size=6, color="#ff9800"),
-                name="Robusta RC (¢/lb converted)",
-            ))
-            fig1.update_layout(
-                paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-                xaxis=dict(gridcolor="#1a2332", tickangle=-45, tickfont=dict(size=10)),
-                yaxis=dict(gridcolor="#1a2332", title="¢/lb"),
-                height=360, margin=dict(l=10, r=10, t=20, b=80),
-                legend=dict(bgcolor="rgba(0,0,0,0)"),
-            )
-            st.plotly_chart(fig1, use_container_width=True)
-
-            # ── Chart 2: Spread ───────────────────────────────────────────────
-            st.markdown('<div class="section-label">ARABICA–ROBUSTA SPREAD (¢/lb)</div>', unsafe_allow_html=True)
-            spread_clean = settle_df.dropna(subset=["spread_cents_lb"])
-            if not spread_clean.empty:
-                spread_avg = spread_clean["spread_cents_lb"].mean()
-                colors = ["#00e676" if v >= 0 else "#ff5252" for v in spread_clean["spread_cents_lb"]]
-                fig2 = go.Figure()
-                fig2.add_trace(go.Bar(
-                    x=spread_clean["x_label"],
-                    y=spread_clean["spread_cents_lb"],
-                    marker_color=colors,
-                    name="Spread (¢/lb)",
-                ))
-                fig2.add_trace(go.Scatter(
-                    x=spread_clean["x_label"], y=spread_clean["spread_cents_lb"],
-                    mode="lines",
-                    line=dict(color="#9c27b0", width=1.5, dash="dot"),
-                    name="Trend",
-                ))
-                fig2.add_hline(y=spread_avg, line_dash="dot", line_color="#4a5568",
-                               annotation_text=f"avg {spread_avg:.2f}",
-                               annotation_font_color="#6b7fa3")
-                fig2.add_hline(y=0, line_color="#1e2d40")
-                fig2.update_layout(
-                    paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-                    xaxis=dict(gridcolor="#1a2332", tickangle=-45, tickfont=dict(size=10)),
-                    yaxis=dict(gridcolor="#1a2332", title="Spread (¢/lb)"),
-                    height=340, margin=dict(l=10, r=10, t=20, b=80),
-                    legend=dict(bgcolor="rgba(0,0,0,0)"),
-                    barmode="relative",
-                )
-                st.plotly_chart(fig2, use_container_width=True)
-
-            # ── Chart 3: RC in USD/MT ─────────────────────────────────────────
-            st.markdown('<div class="section-label">ROBUSTA RC — USD/MT (AS ENTERED)</div>', unsafe_allow_html=True)
-            fig3 = go.Figure()
-            fig3.add_trace(go.Scatter(
-                x=settle_df["x_label"], y=settle_df["rc_usd_mt"],
-                mode="lines+markers",
-                line=dict(color="#ff9800", width=2),
-                marker=dict(size=6),
-                name="Robusta (USD/MT)",
-            ))
-            fig3.update_layout(
-                paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-                xaxis=dict(gridcolor="#1a2332", tickangle=-45, tickfont=dict(size=10)),
-                yaxis=dict(gridcolor="#1a2332", title="USD/MT"),
-                height=300, margin=dict(l=10, r=10, t=20, b=80),
-                legend=dict(bgcolor="rgba(0,0,0,0)"),
-            )
-            st.plotly_chart(fig3, use_container_width=True)
-
-        # ── Monday Open vs Friday Settlement delta ────────────────────────────
+        # ── KPI cards ─────────────────────────────────────────────────────────
         st.markdown("---")
-        st.markdown('<div class="section-label">WEEKLY RANGE — MONDAY OPEN vs FRIDAY SETTLEMENT</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="section-label">KPIs — {sel_expiry} &nbsp;|&nbsp; LAST {n_days} SESSIONS</div>', unsafe_allow_html=True)
 
-        opens  = df_plot[(df_plot["session"] == "Open")  & (df_plot["day"] == "Monday")].set_index("week_of")
-        closes = df_plot[(df_plot["session"] == "Settlement") & (df_plot["day"] == "Friday")].set_index("week_of")
-        both   = opens.join(closes, lsuffix="_open", rsuffix="_close").dropna(subset=["kc_cents_lb_open","kc_cents_lb_close"])
+        k1, k2, k3, k4, k5, k6 = st.columns(6)
 
-        if not both.empty:
-            both["kc_range"]  = both["kc_cents_lb_close"] - both["kc_cents_lb_open"]
-            both["rc_range"]  = both["rc_usd_mt_close"]   - both["rc_usd_mt_open"]
-            both["week_lbl"]  = both.index.strftime("W/O %b %d")
+        def _latest(series): return float(series.iloc[-1]) if len(series) else None
+        def _chg(series):    return float(series.iloc[-1] - series.iloc[-2]) if len(series) >= 2 else None
+        def _pct(series):    return float((series.iloc[-1]/series.iloc[-2]-1)*100) if len(series) >= 2 else None
 
-            r1, r2 = st.columns(2)
-            with r1:
-                fig_r1 = go.Figure(go.Bar(
-                    x=both["week_lbl"], y=both["kc_range"],
-                    marker_color=["#00e676" if v >= 0 else "#ff5252" for v in both["kc_range"]],
-                    name="KC Weekly Move (¢/lb)",
-                ))
-                fig_r1.add_hline(y=0, line_color="#1e2d40")
-                fig_r1.update_layout(
+        kc_settle = kc["settlement"].dropna()
+        rc_settle = rc["settlement"].dropna()
+        rc_clb    = rc_settle / _KC_TO_MT
+
+        with k1:
+            v = _latest(kc_settle)
+            d = _chg(kc_settle)
+            st.metric("KC Last (¢/lb)", f"{v:.2f}" if v else "—",
+                      delta=f"{d:+.2f}" if d is not None else None)
+        with k2:
+            v = _latest(rc_settle)
+            d = _chg(rc_settle)
+            st.metric("RC Last (USD/MT)", f"{v:.0f}" if v else "—",
+                      delta=f"{d:+.0f}" if d is not None else None)
+        with k3:
+            if len(kc_settle) and len(rc_clb):
+                spread = float(kc_settle.iloc[-1] - rc_clb.iloc[-1]) if (len(kc_settle) and len(rc_clb)) else None
+                prev_spread = float(kc_settle.iloc[-2] - rc_clb.iloc[-2]) if (len(kc_settle) >= 2 and len(rc_clb) >= 2) else None
+                d = round(spread - prev_spread, 2) if (spread is not None and prev_spread is not None) else None
+                st.metric("Spread KC−RC (¢/lb)", f"{spread:+.2f}" if spread is not None else "—",
+                          delta=f"{d:+.2f}" if d is not None else None)
+            else:
+                st.metric("Spread KC−RC (¢/lb)", "—")
+        with k4:
+            if len(kc_settle) >= 5:
+                wk = float(kc_settle.iloc[-1] - kc_settle.iloc[-5])
+                st.metric("KC 5-Day Chg", f"{wk:+.2f} ¢/lb")
+            else:
+                st.metric("KC 5-Day Chg", "—")
+        with k5:
+            if len(rc_settle) >= 5:
+                wk_rc = float(rc_settle.iloc[-1] - rc_settle.iloc[-5])
+                st.metric("RC 5-Day Chg", f"{wk_rc:+.0f} USD/MT")
+            else:
+                st.metric("RC 5-Day Chg", "—")
+        with k6:
+            if len(kc_settle) >= 2:
+                hi = float(kc_settle.max())
+                lo = float(kc_settle.min())
+                st.metric("KC Range", f"{lo:.2f} – {hi:.2f}", delta=f"{hi-lo:.2f} spread")
+            else:
+                st.metric("KC Range", "—")
+
+        st.markdown("---")
+
+        # ── Chart 1: KC settlement with MA20/MA50 ────────────────────────────
+        st.markdown('<div class="section-label">NY ARABICA KC — DAILY SETTLEMENTS (¢/lb)</div>', unsafe_allow_html=True)
+
+        if not kc.empty and "settlement" in kc.columns:
+            fig_kc = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                   row_heights=[0.72, 0.28], vertical_spacing=0.03)
+
+            fig_kc.add_trace(go.Scatter(
+                x=kc.index, y=kc["settlement"],
+                mode="lines+markers", marker=dict(size=5),
+                line=dict(color="#00aaff", width=2), name="KC Settlement",
+            ), row=1, col=1)
+
+            # HI/LO range band
+            if "high" in kc.columns and "low" in kc.columns:
+                kc_hi = kc["high"].dropna()
+                kc_lo = kc["low"].dropna()
+                if not kc_hi.empty:
+                    fig_kc.add_trace(go.Scatter(
+                        x=list(kc_hi.index) + list(kc_lo.index[::-1]),
+                        y=list(kc_hi.values) + list(kc_lo.values[::-1]),
+                        fill="toself", fillcolor="rgba(0,170,255,0.07)",
+                        line=dict(color="rgba(0,0,0,0)"), name="Hi/Lo Range", showlegend=True,
+                    ), row=1, col=1)
+
+            if show_ma20 and len(kc_settle) >= 5:
+                ma20 = kc_settle.rolling(min(20, len(kc_settle))).mean()
+                fig_kc.add_trace(go.Scatter(
+                    x=ma20.index, y=ma20,
+                    line=dict(color="#ffeb3b", width=1.2, dash="dot"), name="MA20",
+                ), row=1, col=1)
+
+            if show_ma50 and len(kc_settle) >= 10:
+                ma50 = kc_settle.rolling(min(50, len(kc_settle))).mean()
+                fig_kc.add_trace(go.Scatter(
+                    x=ma50.index, y=ma50,
+                    line=dict(color="#ff9800", width=1.2, dash="dot"), name="MA50",
+                ), row=1, col=1)
+
+            # Daily change bars
+            if "change" in kc.columns:
+                kc_chg = kc["change"].dropna()
+                fig_kc.add_trace(go.Bar(
+                    x=kc_chg.index, y=kc_chg,
+                    marker_color=["#00e676" if v >= 0 else "#ff5252" for v in kc_chg],
+                    name="Daily Chg",
+                ), row=2, col=1)
+                fig_kc.add_hline(y=0, line_color="#1e2d40", row=2, col=1)
+
+            fig_kc.update_layout(
+                paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
+                xaxis2=dict(gridcolor="#1a2332"),
+                yaxis=dict(gridcolor="#1a2332", title="¢/lb"),
+                yaxis2=dict(gridcolor="#1a2332", title="Chg"),
+                height=460, margin=dict(l=10, r=10, t=20, b=10),
+                legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=1.05),
+                xaxis=dict(gridcolor="#1a2332", rangeslider=dict(visible=False)),
+            )
+            st.plotly_chart(fig_kc, use_container_width=True)
+        else:
+            st.info("No KC data for this expiry yet.")
+
+        st.markdown("---")
+
+        # ── Chart 2: RC settlement with MA20/MA50 ────────────────────────────
+        st.markdown('<div class="section-label">LONDON ROBUSTA RC — DAILY SETTLEMENTS (USD/MT)</div>', unsafe_allow_html=True)
+
+        if not rc.empty and "settlement" in rc.columns:
+            fig_rc = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                   row_heights=[0.72, 0.28], vertical_spacing=0.03)
+
+            fig_rc.add_trace(go.Scatter(
+                x=rc.index, y=rc["settlement"],
+                mode="lines+markers", marker=dict(size=5),
+                line=dict(color="#ff9800", width=2), name="RC Settlement",
+            ), row=1, col=1)
+
+            if "high" in rc.columns and "low" in rc.columns:
+                rc_hi = rc["high"].dropna()
+                rc_lo = rc["low"].dropna()
+                if not rc_hi.empty:
+                    fig_rc.add_trace(go.Scatter(
+                        x=list(rc_hi.index) + list(rc_lo.index[::-1]),
+                        y=list(rc_hi.values) + list(rc_lo.values[::-1]),
+                        fill="toself", fillcolor="rgba(255,152,0,0.07)",
+                        line=dict(color="rgba(0,0,0,0)"), name="Hi/Lo Range",
+                    ), row=1, col=1)
+
+            if show_ma20 and len(rc_settle) >= 5:
+                ma20_rc = rc_settle.rolling(min(20, len(rc_settle))).mean()
+                fig_rc.add_trace(go.Scatter(
+                    x=ma20_rc.index, y=ma20_rc,
+                    line=dict(color="#ffeb3b", width=1.2, dash="dot"), name="MA20",
+                ), row=1, col=1)
+
+            if show_ma50 and len(rc_settle) >= 10:
+                ma50_rc = rc_settle.rolling(min(50, len(rc_settle))).mean()
+                fig_rc.add_trace(go.Scatter(
+                    x=ma50_rc.index, y=ma50_rc,
+                    line=dict(color="#00e676", width=1.2, dash="dot"), name="MA50",
+                ), row=1, col=1)
+
+            if "change" in rc.columns:
+                rc_chg = rc["change"].dropna()
+                fig_rc.add_trace(go.Bar(
+                    x=rc_chg.index, y=rc_chg,
+                    marker_color=["#00e676" if v >= 0 else "#ff5252" for v in rc_chg],
+                    name="Daily Chg",
+                ), row=2, col=1)
+                fig_rc.add_hline(y=0, line_color="#1e2d40", row=2, col=1)
+
+            fig_rc.update_layout(
+                paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
+                xaxis2=dict(gridcolor="#1a2332"),
+                yaxis=dict(gridcolor="#1a2332", title="USD/MT"),
+                yaxis2=dict(gridcolor="#1a2332", title="Chg"),
+                height=460, margin=dict(l=10, r=10, t=20, b=10),
+                legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=1.05),
+                xaxis=dict(gridcolor="#1a2332", rangeslider=dict(visible=False)),
+            )
+            st.plotly_chart(fig_rc, use_container_width=True)
+        else:
+            st.info("No RC data for this expiry yet.")
+
+        st.markdown("---")
+
+        # ── Chart 3: KC vs RC normalized + spread ────────────────────────────
+        st.markdown('<div class="section-label">KC vs RC — INDEXED TO 100 & SPREAD (¢/lb)</div>', unsafe_allow_html=True)
+
+        if not kc.empty and not rc.empty:
+            merged = pd.DataFrame({
+                "kc": kc["settlement"],
+                "rc_usd": rc["settlement"],
+            }).dropna()
+            merged["rc_clb"] = merged["rc_usd"] / _KC_TO_MT
+            merged["spread"] = merged["kc"] - merged["rc_clb"]
+
+            if len(merged) >= 2:
+                merged["kc_idx"] = (merged["kc"] / merged["kc"].iloc[0]) * 100
+                merged["rc_idx"] = (merged["rc_usd"] / merged["rc_usd"].iloc[0]) * 100
+
+                fig_vs = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                       row_heights=[0.6, 0.4], vertical_spacing=0.04,
+                                       subplot_titles=["Indexed to 100 (start of window)", "Spread KC−RC (¢/lb)"])
+
+                fig_vs.add_trace(go.Scatter(
+                    x=merged.index, y=merged["kc_idx"],
+                    line=dict(color="#00aaff", width=2), name="KC (indexed)",
+                ), row=1, col=1)
+                fig_vs.add_trace(go.Scatter(
+                    x=merged.index, y=merged["rc_idx"],
+                    line=dict(color="#ff9800", width=2), name="RC (indexed)",
+                ), row=1, col=1)
+                fig_vs.add_hline(y=100, line_color="#1e2d40", row=1, col=1)
+
+                spread_avg = float(merged["spread"].mean())
+                spread_colors = ["#00e676" if v >= 0 else "#ff5252" for v in merged["spread"]]
+                fig_vs.add_trace(go.Bar(
+                    x=merged.index, y=merged["spread"],
+                    marker_color=spread_colors, name="Spread (¢/lb)",
+                ), row=2, col=1)
+                fig_vs.add_trace(go.Scatter(
+                    x=merged.index, y=merged["spread"].rolling(5).mean(),
+                    line=dict(color="#9c27b0", width=1.5, dash="dot"), name="5-day MA spread",
+                ), row=2, col=1)
+                fig_vs.add_hline(y=spread_avg, line_color="#4a5568", line_dash="dot",
+                                 annotation_text=f"avg {spread_avg:.2f}",
+                                 annotation_font_color="#6b7fa3", row=2, col=1)
+                fig_vs.add_hline(y=0, line_color="#1e2d40", row=2, col=1)
+
+                fig_vs.update_layout(
                     paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-                    xaxis=dict(gridcolor="#1a2332", tickangle=-30),
-                    yaxis=dict(gridcolor="#1a2332", title="Mon Open → Fri Close (¢/lb)"),
-                    height=280, margin=dict(l=10, r=10, t=30, b=60),
-                    title=dict(text="KC Weekly Move", font=dict(color="#c8d0e0", size=12)),
+                    xaxis=dict(gridcolor="#1a2332", rangeslider=dict(visible=False)),
+                    xaxis2=dict(gridcolor="#1a2332"),
+                    yaxis=dict(gridcolor="#1a2332"),
+                    yaxis2=dict(gridcolor="#1a2332", title="¢/lb"),
+                    height=480, margin=dict(l=10, r=10, t=30, b=10),
+                    legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=1.05),
                 )
-                st.plotly_chart(fig_r1, use_container_width=True)
+                st.plotly_chart(fig_vs, use_container_width=True)
 
-            with r2:
-                fig_r2 = go.Figure(go.Bar(
-                    x=both["week_lbl"], y=both["rc_range"],
-                    marker_color=["#00e676" if v >= 0 else "#ff5252" for v in both["rc_range"]],
-                    name="RC Weekly Move (USD/MT)",
-                ))
-                fig_r2.add_hline(y=0, line_color="#1e2d40")
-                fig_r2.update_layout(
-                    paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-                    xaxis=dict(gridcolor="#1a2332", tickangle=-30),
-                    yaxis=dict(gridcolor="#1a2332", title="Mon Open → Fri Close (USD/MT)"),
-                    height=280, margin=dict(l=10, r=10, t=30, b=60),
-                    title=dict(text="RC Weekly Move", font=dict(color="#c8d0e0", size=12)),
-                )
-                st.plotly_chart(fig_r2, use_container_width=True)
+        st.markdown("---")
+
+        # ── Chart 4: Open interest ────────────────────────────────────────────
+        st.markdown('<div class="section-label">OPEN INTEREST — KC & RC</div>', unsafe_allow_html=True)
+
+        if "open_interest" in kc.columns or "open_interest" in rc.columns:
+            fig_oi = go.Figure()
+            if "open_interest" in kc.columns:
+                kc_oi = kc["open_interest"].dropna()
+                if not kc_oi.empty:
+                    fig_oi.add_trace(go.Scatter(
+                        x=kc_oi.index, y=kc_oi,
+                        mode="lines+markers", line=dict(color="#00aaff", width=2),
+                        marker=dict(size=5), name="KC OI", yaxis="y1",
+                    ))
+            if "open_interest" in rc.columns:
+                rc_oi = rc["open_interest"].dropna()
+                if not rc_oi.empty:
+                    fig_oi.add_trace(go.Scatter(
+                        x=rc_oi.index, y=rc_oi,
+                        mode="lines+markers", line=dict(color="#ff9800", width=2),
+                        marker=dict(size=5), name="RC OI", yaxis="y2",
+                    ))
+            fig_oi.update_layout(
+                paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
+                xaxis=dict(gridcolor="#1a2332"),
+                yaxis=dict(gridcolor="#1a2332", title="KC Open Interest", side="left"),
+                yaxis2=dict(gridcolor="#1a2332", title="RC Open Interest",
+                            overlaying="y", side="right", showgrid=False),
+                height=280, margin=dict(l=10, r=10, t=20, b=10),
+                legend=dict(bgcolor="rgba(0,0,0,0)"),
+            )
+            st.plotly_chart(fig_oi, use_container_width=True)
+
+        st.markdown("---")
 
         # ── Raw data table ────────────────────────────────────────────────────
-        st.markdown("---")
         st.markdown('<div class="section-label">RAW DATA TABLE</div>', unsafe_allow_html=True)
 
-        display_df = df_plot[["week_of","day","session","kc_cents_lb","rc_usd_mt","rc_cents_lb","spread_cents_lb"]].copy()
-        display_df["week_of"] = display_df["week_of"].dt.strftime("%Y-%m-%d")
-        display_df.columns    = ["Week Of","Day","Session","KC (¢/lb)","RC (USD/MT)","RC (¢/lb)","Spread (¢/lb)"]
-        st.dataframe(display_df.reset_index(drop=True), use_container_width=True, height=300)
+        disp = df_exp[["trade_date","market","expiry_code","settlement","change",
+                       "high","low","last","open_interest","rc_cents_lb","spread_clb"]].copy()
+        disp["trade_date"] = disp["trade_date"].dt.strftime("%Y-%m-%d")
+        disp = disp.sort_values(["trade_date","market"], ascending=[False, True]).reset_index(drop=True)
+        disp.columns = ["Date","Market","Expiry","Settlement","Chg","Hi","Lo","Last","OI","RC ¢/lb","Spread ¢/lb"]
+        st.dataframe(disp, use_container_width=True, height=280)
 
-        col_dl1, col_dl2 = st.columns([1, 5])
-        with col_dl1:
-            csv = display_df.to_csv(index=False).encode()
-            st.download_button("Download CSV", data=csv, file_name="weekly_prices.csv", mime="text/csv")
+        dl1, dl2 = st.columns([1, 5])
+        with dl1:
+            st.download_button("Download CSV",
+                               data=disp.to_csv(index=False).encode(),
+                               file_name=f"settlements_{sel_expiry}.csv",
+                               mime="text/csv")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PAGE: TRADINGVIEW CHARTS

@@ -5,6 +5,25 @@ Format: `[version] — date — summary`
 
 ---
 
+## [1.3.0] — 2026-05-15 — Daily Price History page
+
+### Changed
+- Replaced "Weekly Price History" with **Daily Price History**
+- Fully rebuilt from the new settlements schema (trade_date × expiry × market)
+
+### Daily Price History — what's in it
+- **Expiry selector** — pick any contract month (JUL26, SEP26, etc.)
+- **Days slider** — show last 5 to all available sessions
+- **MA20 / MA50 toggles** — add/remove moving averages on both charts
+- **6 KPI cards**: KC last + daily Δ, RC last + daily Δ, spread KC−RC ¢/lb, 5-day move KC, 5-day move RC, KC hi/lo range
+- **KC chart**: settlement line + hi/lo band + MA20/MA50 + daily change bars below
+- **RC chart**: same layout in USD/MT
+- **Indexed comparison**: both contracts indexed to 100 at window start + spread bar chart below with 5-day MA and period average line
+- **Open interest**: dual-axis KC and RC OI over time
+- **Raw data table** with CSV download per expiry
+
+---
+
 ## [1.0.0] — 2026-05-14 — Initial Release
 
 ### Platform
