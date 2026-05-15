@@ -5,7 +5,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 from pathlib import Path
-from sheets_backend import load_prices, save_row, delete_row, backend_label
+from sheets_backend import (
+    load_prices, save_row, delete_row, backend_label,
+    load_settlements, upsert_settlement, KC_TO_MT as _KC_TO_MT,
+)
 
 st.set_page_config(
     page_title="Vidya Coffee Terminal",
@@ -506,167 +509,264 @@ elif page == "Basis Calculator":
 # PAGE: WEEKLY PRICE ENTRY
 # ═════════════════════════════════════════════════════════════════════════════
 elif page == "Weekly Price Entry":
-    st.markdown('<div class="section-label">WEEKLY MARKET DATA ENTRY — ARABICA & ROBUSTA</div>', unsafe_allow_html=True)
+
+    # ── Expiry month definitions ──────────────────────────────────────────────
+    # Arabica (KC): Mar, May, Jul, Sep, Dec
+    # Robusta (RC): Jan, Mar, May, Jul, Sep, Nov
+    KC_MONTHS = ["JAN","MAR","MAY","JUL","SEP","DEC"]
+    RC_MONTHS = ["JAN","MAR","MAY","JUL","SEP","NOV"]
+
+    def _next_expiries(months_list: list, n: int = 6) -> list:
+        """Return next n expiry codes (e.g. JUL26) from today forward."""
+        today = datetime.today()
+        month_nums = {"JAN":1,"FEB":2,"MAR":3,"APR":4,"MAY":5,"JUN":6,
+                      "JUL":7,"AUG":8,"SEP":9,"OCT":10,"NOV":11,"DEC":12}
+        results = []
+        year = today.year
+        for _ in range(n * 3):  # scan enough calendar space
+            for m in months_list:
+                mn = month_nums[m]
+                if (year > today.year) or (year == today.year and mn >= today.month):
+                    code = f"{m}{str(year)[-2:]}"
+                    if code not in results:
+                        results.append(code)
+                        if len(results) == n:
+                            return results
+            year += 1
+        return results
+
+    KC_EXPIRIES = _next_expiries(KC_MONTHS, 6)   # e.g. [JUL26, SEP26, DEC26, MAR27, MAY27, JUL27]
+    RC_EXPIRIES = _next_expiries(RC_MONTHS, 6)
+
+    # ── Page header ───────────────────────────────────────────────────────────
+    st.markdown('<div class="section-label">DAILY SETTLEMENT ENTRY — NY ARABICA & LONDON ROBUSTA</div>', unsafe_allow_html=True)
     st.markdown(
-        "Enter the **Monday open** and **daily settlements** (Mon–Fri). "
-        "Robusta is entered in USD/MT and auto-converted to ¢/lb for the spread. "
-        "Data is saved to `dashboard/data/weekly_prices.xlsx`."
+        "Enter settlements from your **StoneX / Sucden** daily report. "
+        "Select the trade date, then fill in each expiry row. "
+        "Spread (KC − RC in ¢/lb) is calculated automatically."
     )
     st.markdown("---")
 
-    # ── Week selector ────────────────────────────────────────────────────────
-    today      = datetime.today()
-    last_mon   = today - timedelta(days=today.weekday())   # most recent Monday
-    week_input = st.date_input(
-        "Week of (select the Monday)",
-        value=last_mon.date(),
-        help="Always pick the Monday of the trading week you're entering.",
-    )
-    # Force to Monday
-    week_mon = week_input - timedelta(days=week_input.weekday())
-    if week_mon != week_input:
-        st.info(f"Adjusted to Monday: {week_mon}")
-    week_ts = pd.Timestamp(week_mon)
+    # ── Date selector ─────────────────────────────────────────────────────────
+    today_date  = datetime.today().date()
+    # Default to most recent weekday
+    default_day = today_date
+    if default_day.weekday() > 4:   # weekend → back to Friday
+        default_day = default_day - timedelta(days=default_day.weekday() - 4)
+
+    hdr1, hdr2 = st.columns([2, 6])
+    with hdr1:
+        trade_date = st.date_input("Trade Date", value=default_day,
+                                   help="The date the settlements are for (not today's entry date).")
+    trade_date_str = trade_date.strftime("%Y-%m-%d")
+
+    # Load all saved data once
+    df_all = load_settlements()
+    df_day = (df_all[df_all["trade_date"].dt.strftime("%Y-%m-%d") == trade_date_str].copy()
+              if not df_all.empty else pd.DataFrame())
+
+    def _get(market, expiry, field):
+        if df_day.empty:
+            return 0.0
+        r = df_day[(df_day["market"] == market) & (df_day["expiry_code"] == expiry)]
+        if r.empty:
+            return 0.0
+        v = r.iloc[0].get(field, 0.0)
+        return float(v) if pd.notna(v) and v != "" else 0.0
 
     st.markdown("---")
 
-    # ── Pull current live prices as default hints ────────────────────────────
-    q_kc = fetch_quote("KC=F")
-    q_rc = fetch_quote("RC=F")
-    kc_live = round(q_kc["price"], 2) if q_kc["price"] else 0.0
-    rc_live = round(q_rc["price"], 2) if q_rc["price"] else 0.0
+    # ═════════════════════════════════════════════════════════════════════════
+    # NY ARABICA TABLE  (KC — ¢/lb)
+    # ═════════════════════════════════════════════════════════════════════════
+    st.markdown(
+        '<div class="section-label">NY ARABICA — KC FUTURES &nbsp;|&nbsp; ¢/lb</div>',
+        unsafe_allow_html=True,
+    )
 
-    # ── Build entry grid ─────────────────────────────────────────────────────
-    # Monday has Open + Settlement; Tue-Fri have Settlement only
-    # We lay this out as a table of rows
+    # Column header
+    kc_hdr = st.columns([1.2, 1.6, 1.6, 1.6, 1.6, 1.6, 1.8, 1.0])
+    for col, lbl in zip(kc_hdr, ["EXPIRY","SETTLEMENT","CHG","HI","LO","LAST","OPEN INT",""]):
+        col.markdown(
+            f"<div style='font-family:Courier New;font-size:11px;color:#6b7fa3;"
+            f"letter-spacing:1px;padding-bottom:4px'>{lbl}</div>",
+            unsafe_allow_html=True,
+        )
+    st.markdown("<hr style='margin:2px 0 6px 0;border-color:#1e2d40'>", unsafe_allow_html=True)
 
-    st.markdown('<div class="section-label">PRICE ENTRY GRID</div>', unsafe_allow_html=True)
+    kc_saved_rows = {}
+    for exp in KC_EXPIRIES:
+        key = f"kc_{trade_date_str}_{exp}"
+        cols = st.columns([1.2, 1.6, 1.6, 1.6, 1.6, 1.6, 1.8, 1.0])
 
-    # Header row
-    hcols = st.columns([1.4, 1, 2, 2, 2, 2.5, 1.2])
-    labels = ["Day", "Session", "Arabica KC (¢/lb)", "Robusta RC (USD/MT)",
-              "RC in ¢/lb", "Spread KC−RC (¢/lb)", ""]
-    for col, lbl in zip(hcols, labels):
-        col.markdown(f"<small style='color:#6b7fa3;font-family:Courier New;letter-spacing:1px'>{lbl}</small>",
-                     unsafe_allow_html=True)
-
-    st.markdown("<hr style='margin:4px 0;border-color:#1e2d40'>", unsafe_allow_html=True)
-
-    # Load existing data for this week so we can pre-fill
-    df_existing = load_prices()
-    week_data   = df_existing[df_existing["week_of"] == week_ts] if not df_existing.empty else pd.DataFrame()
-
-    def get_saved(day, session, col):
-        if week_data.empty:
-            return 0.0
-        row = week_data[(week_data["day"] == day) & (week_data["session"] == session)]
-        if row.empty:
-            return 0.0
-        val = row.iloc[0].get(col, 0.0)
-        return float(val) if pd.notna(val) else 0.0
-
-    # Build rows: Monday gets Open + Settlement, Tue–Fri get Settlement only
-    entry_rows = []
-    for day in DAYS:
-        sessions = ["Open", "Settlement"] if day == "Monday" else ["Settlement"]
-        for session in sessions:
-            entry_rows.append((day, session))
-
-    for day, session in entry_rows:
-        row_cols = st.columns([1.4, 1, 2, 2, 2, 2.5, 1.2])
-
-        saved_kc = get_saved(day, session, "kc_cents_lb")
-        saved_rc = get_saved(day, session, "rc_usd_mt")
-        saved_notes = ""
-        if not week_data.empty:
-            r = week_data[(week_data["day"] == day) & (week_data["session"] == session)]
-            if not r.empty:
-                saved_notes = str(r.iloc[0].get("notes", "") or "")
-
-        key_prefix = f"{week_mon}_{day}_{session}"
-
-        with row_cols[0]:
-            day_label = f"**{day}**" if session == "Open" else day
-            st.markdown(f"<div style='padding-top:8px;font-size:13px'>{day_label}</div>", unsafe_allow_html=True)
-        with row_cols[1]:
-            sess_color = "#00aaff" if session == "Open" else "#a0aec0"
-            st.markdown(f"<div style='padding-top:8px;font-size:12px;color:{sess_color}'>{session}</div>",
-                        unsafe_allow_html=True)
-        with row_cols[2]:
-            kc_val = st.number_input("", min_value=0.0, value=saved_kc, step=0.05,
-                                      format="%.2f", key=f"kc_{key_prefix}", label_visibility="collapsed")
-        with row_cols[3]:
-            rc_val = st.number_input("", min_value=0.0, value=saved_rc, step=1.0,
-                                      format="%.2f", key=f"rc_{key_prefix}", label_visibility="collapsed")
-        with row_cols[4]:
-            rc_clb = rc_val / KC_TO_MT if rc_val > 0 else 0.0
+        with cols[0]:
             st.markdown(
-                f"<div style='padding-top:8px;font-size:13px;color:#a0aec0'>"
-                f"{'%.2f' % rc_clb if rc_clb > 0 else '—'}</div>",
+                f"<div style='padding-top:6px;font-family:Courier New;font-size:13px;"
+                f"color:#00aaff;font-weight:bold'>{exp}</div>",
                 unsafe_allow_html=True,
             )
-        with row_cols[5]:
-            spread = (kc_val - rc_clb) if (kc_val > 0 and rc_clb > 0) else None
-            if spread is not None:
-                color  = "#00e676" if spread >= 0 else "#ff5252"
-                sign   = "+" if spread >= 0 else ""
-                st.markdown(
-                    f"<div style='padding-top:8px;font-size:14px;font-weight:bold;color:{color}'>"
-                    f"{sign}{spread:.2f} ¢/lb</div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown("<div style='padding-top:8px;color:#4a5568'>—</div>", unsafe_allow_html=True)
-        with row_cols[6]:
-            if st.button("Save", key=f"save_{key_prefix}", use_container_width=True):
-                rc_clb_save = rc_val / KC_TO_MT if rc_val > 0 else 0.0
-                spread_save = (kc_val - rc_clb_save) if (kc_val > 0 and rc_clb_save > 0) else None
-                save_row({
-                    "week_of":        week_ts,
-                    "day":            day,
-                    "session":        session,
-                    "kc_cents_lb":    kc_val,
-                    "rc_usd_mt":      rc_val,
-                    "rc_cents_lb":    round(rc_clb_save, 4),
-                    "spread_cents_lb": round(spread_save, 4) if spread_save is not None else None,
-                    "notes":          "",
-                })
-                st.success(f"Saved {day} {session}")
-                st.rerun()
+        with cols[1]:
+            settle = st.number_input("", min_value=0.0, value=_get("KC",exp,"settlement"),
+                                     step=0.05, format="%.2f",
+                                     key=f"{key}_s", label_visibility="collapsed")
+        with cols[2]:
+            chg = st.number_input("", value=_get("KC",exp,"change"),
+                                  step=0.05, format="%.2f",
+                                  key=f"{key}_c", label_visibility="collapsed")
+        with cols[3]:
+            hi = st.number_input("", min_value=0.0, value=_get("KC",exp,"high"),
+                                 step=0.05, format="%.2f",
+                                 key=f"{key}_h", label_visibility="collapsed")
+        with cols[4]:
+            lo = st.number_input("", min_value=0.0, value=_get("KC",exp,"low"),
+                                 step=0.05, format="%.2f",
+                                 key=f"{key}_l", label_visibility="collapsed")
+        with cols[5]:
+            last = st.number_input("", min_value=0.0, value=_get("KC",exp,"last"),
+                                   step=0.05, format="%.2f",
+                                   key=f"{key}_la", label_visibility="collapsed")
+        with cols[6]:
+            oi = st.number_input("", min_value=0, value=int(_get("KC",exp,"open_interest")),
+                                 step=1,
+                                 key=f"{key}_oi", label_visibility="collapsed")
+        with cols[7]:
+            save_kc = st.button("Save", key=f"{key}_btn", use_container_width=True)
 
-        st.markdown("<hr style='margin:2px 0;border-color:#111827'>", unsafe_allow_html=True)
+        kc_saved_rows[exp] = {
+            "settle": settle, "chg": chg, "hi": hi, "lo": lo,
+            "last": last, "oi": oi, "save": save_kc,
+        }
+        st.markdown("<hr style='margin:1px 0;border-color:#111827'>", unsafe_allow_html=True)
 
-    # ── This week summary ────────────────────────────────────────────────────
-    df_existing = load_prices()
-    week_data   = df_existing[df_existing["week_of"] == week_ts] if not df_existing.empty else pd.DataFrame()
+    st.markdown("---")
 
-    if not week_data.empty:
-        st.markdown("---")
-        st.markdown('<div class="section-label">THIS WEEK AT A GLANCE</div>', unsafe_allow_html=True)
+    # ═════════════════════════════════════════════════════════════════════════
+    # LONDON ROBUSTA TABLE  (RC — USD/MT)
+    # ═════════════════════════════════════════════════════════════════════════
+    st.markdown(
+        '<div class="section-label">LONDON ROBUSTA — RC FUTURES &nbsp;|&nbsp; USD/MT</div>',
+        unsafe_allow_html=True,
+    )
 
-        settle = week_data[week_data["session"] == "Settlement"].copy()
-        if not settle.empty:
-            settle_sorted = settle.set_index("day").reindex(DAYS).dropna(how="all")
-            m1, m2, m3, m4 = st.columns(4)
-            kc_vals = settle_sorted["kc_cents_lb"].dropna()
-            rc_vals = settle_sorted["rc_cents_lb"].dropna()
-            sp_vals = settle_sorted["spread_cents_lb"].dropna()
+    rc_hdr = st.columns([1.2, 1.6, 1.6, 1.6, 1.6, 1.6, 1.8, 1.0])
+    for col, lbl in zip(rc_hdr, ["EXPIRY","SETTLEMENT","CHG","HI","LO","LAST","OPEN INT",""]):
+        col.markdown(
+            f"<div style='font-family:Courier New;font-size:11px;color:#6b7fa3;"
+            f"letter-spacing:1px;padding-bottom:4px'>{lbl}</div>",
+            unsafe_allow_html=True,
+        )
+    st.markdown("<hr style='margin:2px 0 6px 0;border-color:#1e2d40'>", unsafe_allow_html=True)
 
-            if len(kc_vals) >= 2:
-                with m1:
-                    wk_chg = kc_vals.iloc[-1] - kc_vals.iloc[0]
-                    st.metric("KC Week Chg (¢/lb)", f"{kc_vals.iloc[-1]:.2f}", delta=f"{wk_chg:+.2f}")
-            if len(rc_vals) >= 2:
-                with m2:
-                    wk_chg_rc = rc_vals.iloc[-1] - rc_vals.iloc[0]
-                    st.metric("RC Week Chg (¢/lb)", f"{rc_vals.iloc[-1]:.2f}", delta=f"{wk_chg_rc:+.2f}")
-            if len(sp_vals) >= 1:
-                with m3:
-                    st.metric("Latest Spread", f"{sp_vals.iloc[-1]:+.2f} ¢/lb")
-            if len(sp_vals) >= 2:
-                with m4:
-                    sp_chg = sp_vals.iloc[-1] - sp_vals.iloc[0]
-                    st.metric("Spread Chg (week)", f"{sp_chg:+.2f} ¢/lb")
+    rc_saved_rows = {}
+    for exp in RC_EXPIRIES:
+        key = f"rc_{trade_date_str}_{exp}"
+        cols = st.columns([1.2, 1.6, 1.6, 1.6, 1.6, 1.6, 1.8, 1.0])
+
+        with cols[0]:
+            st.markdown(
+                f"<div style='padding-top:6px;font-family:Courier New;font-size:13px;"
+                f"color:#ff9800;font-weight:bold'>{exp}</div>",
+                unsafe_allow_html=True,
+            )
+        with cols[1]:
+            settle = st.number_input("", min_value=0.0, value=_get("RC",exp,"settlement"),
+                                     step=1.0, format="%.2f",
+                                     key=f"{key}_s", label_visibility="collapsed")
+        with cols[2]:
+            chg = st.number_input("", value=_get("RC",exp,"change"),
+                                  step=1.0, format="%.2f",
+                                  key=f"{key}_c", label_visibility="collapsed")
+        with cols[3]:
+            hi = st.number_input("", min_value=0.0, value=_get("RC",exp,"high"),
+                                 step=1.0, format="%.2f",
+                                 key=f"{key}_h", label_visibility="collapsed")
+        with cols[4]:
+            lo = st.number_input("", min_value=0.0, value=_get("RC",exp,"low"),
+                                 step=1.0, format="%.2f",
+                                 key=f"{key}_l", label_visibility="collapsed")
+        with cols[5]:
+            last = st.number_input("", min_value=0.0, value=_get("RC",exp,"last"),
+                                   step=1.0, format="%.2f",
+                                   key=f"{key}_la", label_visibility="collapsed")
+        with cols[6]:
+            oi = st.number_input("", min_value=0, value=int(_get("RC",exp,"open_interest")),
+                                 step=1,
+                                 key=f"{key}_oi", label_visibility="collapsed")
+        with cols[7]:
+            save_rc = st.button("Save", key=f"{key}_btn", use_container_width=True)
+
+        rc_saved_rows[exp] = {
+            "settle": settle, "chg": chg, "hi": hi, "lo": lo,
+            "last": last, "oi": oi, "save": save_rc,
+        }
+        st.markdown("<hr style='margin:1px 0;border-color:#111827'>", unsafe_allow_html=True)
+
+    # ── Process saves ─────────────────────────────────────────────────────────
+    for exp, vals in kc_saved_rows.items():
+        if vals["save"]:
+            upsert_settlement({
+                "trade_date": trade_date_str, "expiry_code": exp, "market": "KC",
+                "settlement": vals["settle"], "change": vals["chg"],
+                "high": vals["hi"], "low": vals["lo"],
+                "last": vals["last"], "open_interest": vals["oi"],
+                "rc_cents_lb": "", "spread_clb": "", "notes": "",
+            })
+            st.success(f"Saved KC {exp}")
+            st.rerun()
+
+    for exp, vals in rc_saved_rows.items():
+        if vals["save"]:
+            rc_clb = round(vals["settle"] / _KC_TO_MT, 4) if vals["settle"] > 0 else ""
+            # Try to compute spread against KC same expiry same date
+            kc_match = (_get("KC", exp, "settlement") if not df_day.empty else 0.0)
+            spread   = round(kc_match - (vals["settle"] / _KC_TO_MT), 4) if (kc_match > 0 and vals["settle"] > 0) else ""
+            upsert_settlement({
+                "trade_date": trade_date_str, "expiry_code": exp, "market": "RC",
+                "settlement": vals["settle"], "change": vals["chg"],
+                "high": vals["hi"], "low": vals["lo"],
+                "last": vals["last"], "open_interest": vals["oi"],
+                "rc_cents_lb": rc_clb, "spread_clb": spread, "notes": "",
+            })
+            st.success(f"Saved RC {exp}")
+            st.rerun()
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # SPREAD SUMMARY TABLE — shown after both KC and RC have data
+    # ═════════════════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown('<div class="section-label">SPREAD SUMMARY — KC minus RC (¢/lb) BY EXPIRY</div>', unsafe_allow_html=True)
+
+    df_day2 = (df_all[df_all["trade_date"].dt.strftime("%Y-%m-%d") == trade_date_str].copy()
+               if not df_all.empty else pd.DataFrame())
+
+    if not df_day2.empty:
+        kc_df = df_day2[df_day2["market"] == "KC"][["expiry_code","settlement"]].rename(columns={"settlement":"kc"})
+        rc_df = df_day2[df_day2["market"] == "RC"][["expiry_code","settlement","rc_cents_lb"]].rename(columns={"settlement":"rc_usd_mt"})
+        spread_df = kc_df.merge(rc_df, on="expiry_code", how="inner")
+        spread_df["rc_clb"]  = spread_df["rc_usd_mt"] / _KC_TO_MT
+        spread_df["spread"]  = spread_df["kc"] - spread_df["rc_clb"]
+
+        if not spread_df.empty:
+            sp_cols = st.columns(min(len(spread_df), 6))
+            for i, (_, row) in enumerate(spread_df.iterrows()):
+                if i >= len(sp_cols):
+                    break
+                with sp_cols[i]:
+                    color = "#00e676" if row["spread"] >= 0 else "#ff5252"
+                    sign  = "+" if row["spread"] >= 0 else ""
+                    st.markdown(
+                        f"<div style='background:#111827;border:1px solid #1e2d40;"
+                        f"border-radius:6px;padding:10px;text-align:center'>"
+                        f"<div style='font-family:Courier New;font-size:11px;color:#6b7fa3'>{row['expiry_code']}</div>"
+                        f"<div style='font-size:18px;font-weight:bold;color:{color}'>{sign}{row['spread']:.2f}</div>"
+                        f"<div style='font-size:10px;color:#4a5568'>¢/lb</div>"
+                        f"<div style='font-size:11px;color:#a0aec0;margin-top:4px'>"
+                        f"KC {row['kc']:.2f} &nbsp;|&nbsp; RC {row['rc_usd_mt']:.0f}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.info("Enter both KC and RC settlements for the same expiry to see the spread.")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PAGE: WEEKLY PRICE HISTORY
