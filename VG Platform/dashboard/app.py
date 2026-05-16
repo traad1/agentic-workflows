@@ -17,47 +17,210 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Styling: dark terminal theme ────────────────────────────────────────────
+# ── Styling: cointop-inspired terminal theme ────────────────────────────────
+# Palette (cointop conventions):
+#   bg #000000  | fg #ffffff  | dim #808080
+#   green #00ff5f  (primary / gains)
+#   red   #ff005f  (losses)
+#   cyan  #00d7ff  (headers, accents)
+#   pink  #ff00d7  (selected / highlighted)
+#   yellow#ffd700  (warnings)
+# Inspired by https://github.com/cointop-sh/cointop
 st.markdown("""
 <style>
-    .stApp { background-color: #0a0e1a; color: #c8d0e0; }
-    .stMetric { background-color: #111827; border: 1px solid #1e2d40; border-radius: 6px; padding: 12px; }
-    .stMetric label { color: #6b7fa3 !important; font-size: 11px !important; text-transform: uppercase; letter-spacing: 1px; }
-    .stMetric [data-testid="metric-container"] { color: #e2e8f0; }
-    .block-container { padding-top: 1rem; }
-    h1, h2, h3 { color: #e2e8f0; font-family: 'Courier New', monospace; }
-    .stSidebar { background-color: #0d1117; }
-    div[data-testid="stSidebarNav"] { background-color: #0d1117; }
-    .terminal-header {
-        background: linear-gradient(90deg, #0f2027, #203a43, #2c5364);
-        padding: 10px 20px;
-        border-radius: 6px;
-        margin-bottom: 20px;
-        font-family: 'Courier New', monospace;
-        color: #00d4ff;
-        font-size: 22px;
+    /* ── Base layout ──────────────────────────────────────────────────── */
+    .stApp {
+        background-color: #000000;
+        color: #ffffff;
+        font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+    }
+    .block-container { padding-top: 0.6rem; max-width: 100% !important; }
+    section.main > div { padding-top: 0 !important; }
+
+    /* ── Typography ───────────────────────────────────────────────────── */
+    h1, h2, h3, h4, h5, h6, p, div, span, label, small, code, pre {
+        font-family: Menlo, Monaco, Consolas, "Courier New", monospace !important;
+    }
+    h1, h2, h3 { color: #00d7ff; letter-spacing: 1px; text-transform: uppercase; }
+    a { color: #00d7ff; }
+    a:hover { color: #ff00d7; }
+
+    /* ── Sidebar ──────────────────────────────────────────────────────── */
+    .stSidebar, [data-testid="stSidebar"] {
+        background-color: #000000;
+        border-right: 1px solid #2a2a2a;
+    }
+    [data-testid="stSidebar"] * { color: #ffffff; }
+    [data-testid="stSidebar"] label { color: #808080 !important; }
+    [data-testid="stSidebar"] h3 { color: #00ff5f !important; }
+
+    /* Radio nav — make it look like cointop's selectable rows */
+    [data-testid="stSidebar"] [role="radiogroup"] label {
+        padding: 4px 8px;
+        margin: 1px 0;
+        border-left: 2px solid transparent;
+        font-size: 13px;
+    }
+    [data-testid="stSidebar"] [role="radiogroup"] label:hover {
+        background-color: #1a1a1a;
+        border-left-color: #ff00d7;
+    }
+    [data-testid="stSidebar"] [role="radiogroup"] label[data-baseweb="radio"] > div:first-child {
+        display: none;
+    }
+
+    /* ── Metric cards (cointop "stat" tile look) ──────────────────────── */
+    [data-testid="stMetric"] {
+        background-color: #0a0a0a;
+        border: 1px solid #2a2a2a;
+        border-radius: 0;
+        padding: 8px 12px;
+    }
+    [data-testid="stMetric"] label {
+        color: #808080 !important;
+        font-size: 10px !important;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+    }
+    [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+        font-size: 22px !important;
         font-weight: bold;
-        letter-spacing: 2px;
     }
+    [data-testid="stMetricDelta"] { font-size: 12px; }
+
+    /* ── Header banner ────────────────────────────────────────────────── */
+    .terminal-header {
+        background-color: #000000;
+        border: 1px solid #00ff5f;
+        padding: 8px 14px;
+        margin-bottom: 14px;
+        font-family: Menlo, Monaco, Consolas, monospace;
+        color: #00ff5f;
+        font-size: 18px;
+        font-weight: bold;
+        letter-spacing: 3px;
+        border-radius: 0;
+    }
+
+    /* ── Section labels — cointop bracketed panel headers ─────────────── */
     .section-label {
-        background-color: #1a2332;
-        color: #00aaff;
-        font-family: 'Courier New', monospace;
-        font-size: 11px;
+        background-color: transparent;
+        color: #00d7ff;
+        font-family: Menlo, Monaco, Consolas, monospace;
+        font-size: 12px;
         letter-spacing: 2px;
-        padding: 4px 10px;
-        border-left: 3px solid #00aaff;
-        margin-bottom: 8px;
+        padding: 2px 0;
+        border-left: none;
+        border-bottom: 1px solid #2a2a2a;
+        margin-bottom: 10px;
+        text-transform: uppercase;
     }
-    .positive { color: #00e676; }
-    .negative { color: #ff5252; }
-    hr { border-color: #1e2d40; }
-    div[data-testid="stNumberInput"] input { background-color: #111827; color: #e2e8f0; border: 1px solid #1e2d40; }
-    div[data-testid="stDateInput"] input { background-color: #111827; color: #e2e8f0; border: 1px solid #1e2d40; }
-    .stDataFrame { background-color: #0d1117; }
-    thead tr th { background-color: #1a2332 !important; color: #00aaff !important; font-family: 'Courier New', monospace; }
-    tbody tr:nth-child(even) { background-color: #0d1117; }
-    tbody tr:nth-child(odd)  { background-color: #111827; }
+    .section-label::before { content: "[ "; color: #808080; }
+    .section-label::after  { content: " ]"; color: #808080; }
+
+    /* ── Gain / loss color helpers ────────────────────────────────────── */
+    .positive { color: #00ff5f !important; }
+    .negative { color: #ff005f !important; }
+
+    /* ── Dividers ─────────────────────────────────────────────────────── */
+    hr { border-color: #2a2a2a; margin: 8px 0; }
+
+    /* ── Inputs ───────────────────────────────────────────────────────── */
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stDateInput"] input,
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+        background-color: #0a0a0a !important;
+        color: #ffffff !important;
+        border: 1px solid #2a2a2a !important;
+        border-radius: 0 !important;
+        font-family: Menlo, Monaco, Consolas, monospace !important;
+    }
+    div[data-testid="stNumberInput"] input:focus,
+    div[data-testid="stDateInput"] input:focus,
+    div[data-testid="stTextInput"] input:focus {
+        border-color: #00ff5f !important;
+        box-shadow: none !important;
+    }
+
+    /* ── Buttons ──────────────────────────────────────────────────────── */
+    .stButton > button {
+        background-color: #000000;
+        color: #00ff5f;
+        border: 1px solid #00ff5f;
+        border-radius: 0;
+        font-family: Menlo, Monaco, Consolas, monospace;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding: 4px 12px;
+    }
+    .stButton > button:hover {
+        background-color: #00ff5f;
+        color: #000000;
+        border-color: #00ff5f;
+    }
+    .stDownloadButton > button {
+        background-color: #000000;
+        color: #00d7ff;
+        border: 1px solid #00d7ff;
+        border-radius: 0;
+        font-family: Menlo, Monaco, Consolas, monospace;
+    }
+
+    /* ── Tables / DataFrames ──────────────────────────────────────────── */
+    .stDataFrame, [data-testid="stDataFrame"] {
+        background-color: #000000;
+        border: 1px solid #2a2a2a;
+    }
+    thead tr th {
+        background-color: #0a0a0a !important;
+        color: #00d7ff !important;
+        font-family: Menlo, Monaco, Consolas, monospace !important;
+        text-transform: uppercase;
+        font-size: 11px !important;
+        letter-spacing: 1px;
+        border-bottom: 1px solid #00d7ff !important;
+    }
+    tbody tr:nth-child(even) { background-color: #000000; }
+    tbody tr:nth-child(odd)  { background-color: #0a0a0a; }
+    tbody tr:hover { background-color: #1a1a1a !important; color: #ff00d7 !important; }
+    tbody td { color: #ffffff; font-family: Menlo, Monaco, Consolas, monospace !important; }
+
+    /* ── Sliders ──────────────────────────────────────────────────────── */
+    .stSlider [data-baseweb="slider"] div[role="slider"] {
+        background-color: #00ff5f;
+        border: 1px solid #00ff5f;
+    }
+    .stSlider [data-baseweb="slider"] > div > div > div { background-color: #00ff5f !important; }
+
+    /* ── Tabs / expanders ─────────────────────────────────────────────── */
+    .stTabs [data-baseweb="tab"] {
+        color: #808080;
+        font-family: Menlo, monospace;
+        text-transform: uppercase;
+        font-size: 12px;
+        letter-spacing: 1px;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        color: #00ff5f;
+        border-bottom-color: #00ff5f;
+    }
+
+    /* ── Info / warning / success boxes ───────────────────────────────── */
+    [data-testid="stAlert"] {
+        background-color: #0a0a0a;
+        border: 1px solid #00d7ff;
+        border-radius: 0;
+        color: #ffffff;
+    }
+
+    /* ── Scrollbar (Webkit) ───────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #000000; }
+    ::-webkit-scrollbar-thumb { background: #2a2a2a; }
+    ::-webkit-scrollbar-thumb:hover { background: #00ff5f; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -156,7 +319,7 @@ def fetch_robusta(period: str) -> pd.DataFrame:
         st.warning(f"Robusta data fetch failed: {e}")
         return pd.DataFrame()
 
-def candlestick_chart(df: pd.DataFrame, title: str, color: str = "#00aaff") -> go.Figure:
+def candlestick_chart(df: pd.DataFrame, title: str, color: str = "#00d7ff") -> go.Figure:
     fig = go.Figure()
     if df.empty:
         return fig
@@ -166,8 +329,8 @@ def candlestick_chart(df: pd.DataFrame, title: str, color: str = "#00aaff") -> g
             x=df.index,
             open=df["Open"], high=df["High"],
             low=df["Low"],   close=df["Close"],
-            increasing_line_color="#00e676",
-            decreasing_line_color="#ff5252",
+            increasing_line_color="#00ff5f",
+            decreasing_line_color="#ff005f",
             name=title,
         ))
     else:
@@ -178,13 +341,13 @@ def candlestick_chart(df: pd.DataFrame, title: str, color: str = "#00aaff") -> g
                               marker_color="rgba(0,170,255,0.15)", name="Volume", yaxis="y2"))
         fig.update_layout(
             yaxis2=dict(overlaying="y", side="right", showgrid=False,
-                        tickfont=dict(color="#4a5568", size=9), showticklabels=False))
+                        tickfont=dict(color="#2a2a2a", size=9), showticklabels=False))
     fig.update_layout(
-        title=dict(text=title, font=dict(color="#c8d0e0", size=13, family="Courier New")),
-        paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117",
-        font=dict(color="#c8d0e0"),
-        xaxis=dict(gridcolor="#1a2332", showgrid=True, rangeslider=dict(visible=False)),
-        yaxis=dict(gridcolor="#1a2332", showgrid=True, side="left"),
+        title=dict(text=title, font=dict(color="#ffffff", size=13, family="Courier New")),
+        paper_bgcolor="#000000", plot_bgcolor="#000000",
+        font=dict(color="#ffffff"),
+        xaxis=dict(gridcolor="#1a1a1a", showgrid=True, rangeslider=dict(visible=False)),
+        yaxis=dict(gridcolor="#1a1a1a", showgrid=True, side="left"),
         margin=dict(l=10, r=10, t=40, b=10),
         legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10)),
         height=320,
@@ -193,15 +356,15 @@ def candlestick_chart(df: pd.DataFrame, title: str, color: str = "#00aaff") -> g
 
 def large_candle_chart(df: pd.DataFrame, title: str, *,
                         price_unit: str = "¢/lb",
-                        accent_color: str = "#00aaff",
+                        accent_color: str = "#00d7ff",
                         height: int = 520) -> go.Figure:
     """Full-width candle chart with MA20/MA50 overlays and a volume sub-panel."""
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                          row_heights=[0.78, 0.22], vertical_spacing=0.03)
     if df.empty:
         fig.update_layout(
-            title=dict(text=title + " — no data", font=dict(color="#c8d0e0", size=15)),
-            paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", height=height,
+            title=dict(text=title + " — no data", font=dict(color="#ffffff", size=15)),
+            paper_bgcolor="#000000", plot_bgcolor="#000000", height=height,
         )
         return fig
 
@@ -210,10 +373,10 @@ def large_candle_chart(df: pd.DataFrame, title: str, *,
         fig.add_trace(go.Candlestick(
             x=df.index, open=df["Open"], high=df["High"],
             low=df["Low"], close=df["Close"],
-            increasing_line_color="#00e676",
-            decreasing_line_color="#ff5252",
-            increasing_fillcolor="#00e676",
-            decreasing_fillcolor="#ff5252",
+            increasing_line_color="#00ff5f",
+            decreasing_line_color="#ff005f",
+            increasing_fillcolor="#00ff5f",
+            decreasing_fillcolor="#ff005f",
             name="Price",
             showlegend=False,
         ), row=1, col=1)
@@ -227,7 +390,7 @@ def large_candle_chart(df: pd.DataFrame, title: str, *,
         if len(df) >= 20:
             ma20 = df["Close"].rolling(20).mean()
             fig.add_trace(go.Scatter(x=df.index, y=ma20,
-                                      line=dict(color="#ffeb3b", width=1.2, dash="dot"),
+                                      line=dict(color="#ffd700", width=1.2, dash="dot"),
                                       name="MA 20"), row=1, col=1)
         if len(df) >= 50:
             ma50 = df["Close"].rolling(50).mean()
@@ -248,15 +411,15 @@ def large_candle_chart(df: pd.DataFrame, title: str, *,
                               showlegend=False), row=2, col=1)
 
     fig.update_layout(
-        title=dict(text=title, font=dict(color="#e2e8f0", size=16,
+        title=dict(text=title, font=dict(color="#ffffff", size=16,
                                           family="Courier New"), x=0.01),
-        paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117",
-        font=dict(color="#c8d0e0"),
-        xaxis=dict(gridcolor="#1a2332", showgrid=True, rangeslider=dict(visible=False)),
-        xaxis2=dict(gridcolor="#1a2332", showgrid=True),
-        yaxis=dict(gridcolor="#1a2332", showgrid=True, title=price_unit, side="right"),
-        yaxis2=dict(gridcolor="#1a2332", showgrid=False, title="Vol", side="right",
-                     tickfont=dict(size=9, color="#6b7fa3")),
+        paper_bgcolor="#000000", plot_bgcolor="#000000",
+        font=dict(color="#ffffff"),
+        xaxis=dict(gridcolor="#1a1a1a", showgrid=True, rangeslider=dict(visible=False)),
+        xaxis2=dict(gridcolor="#1a1a1a", showgrid=True),
+        yaxis=dict(gridcolor="#1a1a1a", showgrid=True, title=price_unit, side="right"),
+        yaxis2=dict(gridcolor="#1a1a1a", showgrid=False, title="Vol", side="right",
+                     tickfont=dict(size=9, color="#808080")),
         margin=dict(l=10, r=60, t=50, b=10),
         legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h",
                      y=1.02, x=0.99, xanchor="right",
@@ -267,20 +430,20 @@ def large_candle_chart(df: pd.DataFrame, title: str, *,
     return fig
 
 
-def line_chart(x, y, title: str, color: str = "#00aaff", height: int = 260) -> go.Figure:
+def line_chart(x, y, title: str, color: str = "#00d7ff", height: int = 260) -> go.Figure:
     fig = go.Figure(go.Scatter(
         x=x, y=y,
         line=dict(color=color, width=1.5),
         fill="tozeroy",
-        fillcolor="rgba(0,170,255,0.05)",
+        fillcolor="rgba(0,215,255,0.05)",
     ))
     fig.update_layout(
-        title=dict(text=title, font=dict(color="#c8d0e0", size=12, family="Courier New")),
-        paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117",
-        xaxis=dict(gridcolor="#1a2332", showgrid=True, rangeslider=dict(visible=False)),
-        yaxis=dict(gridcolor="#1a2332", showgrid=True),
+        title=dict(text=title, font=dict(color="#ffffff", size=12, family="Courier New")),
+        paper_bgcolor="#000000", plot_bgcolor="#000000",
+        xaxis=dict(gridcolor="#1a1a1a", showgrid=True, rangeslider=dict(visible=False)),
+        yaxis=dict(gridcolor="#1a1a1a", showgrid=True),
         margin=dict(l=10, r=10, t=35, b=10),
-        height=height, font=dict(color="#c8d0e0"),
+        height=height, font=dict(color="#ffffff"),
     )
     return fig
 
@@ -305,7 +468,7 @@ with st.sidebar:
         st.rerun()
     st.markdown("---")
     _bl = backend_label()
-    _bl_color = "#00e676" if _bl == "Google Sheets" else "#ffeb3b"
+    _bl_color = "#00ff5f" if _bl == "Google Sheets" else "#ffeb3b"
     st.markdown(
         f"<small style='color:{_bl_color}'>&#9679; {_bl}</small><br>"
         f"<small style='color:#4a5568'>Last update: {datetime.now().strftime('%H:%M:%S')}</small>",
@@ -345,7 +508,7 @@ if page == "Market Overview":
         large_candle_chart(df_kc,
                            f"Arabica Coffee — {timeframe_label}",
                            price_unit="¢/lb",
-                           accent_color="#00aaff",
+                           accent_color="#00d7ff",
                            height=520),
         use_container_width=True,
     )
@@ -374,7 +537,7 @@ if page == "Market Overview":
         if not df_brl.empty:
             st.plotly_chart(line_chart(df_brl.index, df_brl["Close"],
                                         "BRL/USD Exchange Rate",
-                                        color="#00e676", height=320),
+                                        color="#00ff5f", height=320),
                             use_container_width=True)
     with macro_r:
         df_dxy = fetch("DX-Y.NYB", period)
@@ -414,11 +577,11 @@ elif page == "Arabica Deep Dive":
             fig.add_trace(go.Candlestick(
                 x=df_kc.index, open=df_kc["Open"], high=df_kc["High"],
                 low=df_kc["Low"], close=df_kc["Close"],
-                increasing_line_color="#00e676", decreasing_line_color="#ff5252", name="KC"),
+                increasing_line_color="#00ff5f", decreasing_line_color="#ff005f", name="KC"),
                 row=1, col=1)
         if len(df_kc) >= 20:
             fig.add_trace(go.Scatter(x=df_kc.index, y=df_kc["Close"].rolling(20).mean(),
-                                     line=dict(color="#ffeb3b", width=1, dash="dot"), name="MA20"), row=1, col=1)
+                                     line=dict(color="#ffd700", width=1, dash="dot"), name="MA20"), row=1, col=1)
         if len(df_kc) >= 50:
             fig.add_trace(go.Scatter(x=df_kc.index, y=df_kc["Close"].rolling(50).mean(),
                                      line=dict(color="#ff9800", width=1, dash="dot"), name="MA50"), row=1, col=1)
@@ -426,11 +589,11 @@ elif page == "Arabica Deep Dive":
             fig.add_trace(go.Bar(x=df_kc.index, y=df_kc["Volume"],
                                  marker_color="rgba(0,170,255,0.3)", name="Volume"), row=2, col=1)
         fig.update_layout(
-            paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-            xaxis=dict(gridcolor="#1a2332", rangeslider=dict(visible=False)),
-            xaxis2=dict(gridcolor="#1a2332"),
-            yaxis=dict(gridcolor="#1a2332", title="Price (¢/lb)"),
-            yaxis2=dict(gridcolor="#1a2332", title="Volume"),
+            paper_bgcolor="#000000", plot_bgcolor="#000000", font=dict(color="#ffffff"),
+            xaxis=dict(gridcolor="#1a1a1a", rangeslider=dict(visible=False)),
+            xaxis2=dict(gridcolor="#1a1a1a"),
+            yaxis=dict(gridcolor="#1a1a1a", title="Price (¢/lb)"),
+            yaxis2=dict(gridcolor="#1a1a1a", title="Volume"),
             height=480, margin=dict(l=10, r=10, t=20, b=10),
             legend=dict(bgcolor="rgba(0,0,0,0)"),
         )
@@ -441,14 +604,14 @@ elif page == "Arabica Deep Dive":
     if not df_kc.empty and not df_brl.empty:
         fig2 = make_subplots(specs=[[{"secondary_y": True}]])
         fig2.add_trace(go.Scatter(x=df_kc.index, y=df_kc["Close"],
-                                   line=dict(color="#00aaff", width=1.5), name="KC (¢/lb)"), secondary_y=False)
+                                   line=dict(color="#00d7ff", width=1.5), name="KC (¢/lb)"), secondary_y=False)
         fig2.add_trace(go.Scatter(x=df_brl.index, y=df_brl["Close"],
-                                   line=dict(color="#00e676", width=1.5, dash="dash"), name="BRL/USD"), secondary_y=True)
+                                   line=dict(color="#00ff5f", width=1.5, dash="dash"), name="BRL/USD"), secondary_y=True)
         fig2.update_layout(
-            paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-            xaxis=dict(gridcolor="#1a2332"),
-            yaxis=dict(gridcolor="#1a2332", title="KC Price (¢/lb)"),
-            yaxis2=dict(title="BRL/USD", gridcolor="#1a2332"),
+            paper_bgcolor="#000000", plot_bgcolor="#000000", font=dict(color="#ffffff"),
+            xaxis=dict(gridcolor="#1a1a1a"),
+            yaxis=dict(gridcolor="#1a1a1a", title="KC Price (¢/lb)"),
+            yaxis2=dict(title="BRL/USD", gridcolor="#1a1a1a"),
             height=300, margin=dict(l=10, r=10, t=20, b=10),
             legend=dict(bgcolor="rgba(0,0,0,0)"),
         )
@@ -484,20 +647,20 @@ elif page == "Robusta Deep Dive":
             fig.add_trace(go.Candlestick(
                 x=df_rc.index, open=df_rc["Open"], high=df_rc["High"],
                 low=df_rc["Low"], close=df_rc["Close"],
-                increasing_line_color="#00e676", decreasing_line_color="#ff5252", name="RC"),
+                increasing_line_color="#00ff5f", decreasing_line_color="#ff005f", name="RC"),
                 row=1, col=1)
         if len(df_rc) >= 20:
             fig.add_trace(go.Scatter(x=df_rc.index, y=df_rc["Close"].rolling(20).mean(),
-                                     line=dict(color="#ffeb3b", width=1, dash="dot"), name="MA20"), row=1, col=1)
+                                     line=dict(color="#ffd700", width=1, dash="dot"), name="MA20"), row=1, col=1)
         if "Volume" in df_rc.columns:
             fig.add_trace(go.Bar(x=df_rc.index, y=df_rc["Volume"],
                                  marker_color="rgba(255,152,0,0.3)", name="Volume"), row=2, col=1)
         fig.update_layout(
-            paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-            xaxis=dict(gridcolor="#1a2332", rangeslider=dict(visible=False)),
-            xaxis2=dict(gridcolor="#1a2332"),
-            yaxis=dict(gridcolor="#1a2332", title="Price (USD/MT)"),
-            yaxis2=dict(gridcolor="#1a2332", title="Volume"),
+            paper_bgcolor="#000000", plot_bgcolor="#000000", font=dict(color="#ffffff"),
+            xaxis=dict(gridcolor="#1a1a1a", rangeslider=dict(visible=False)),
+            xaxis2=dict(gridcolor="#1a1a1a"),
+            yaxis=dict(gridcolor="#1a1a1a", title="Price (USD/MT)"),
+            yaxis2=dict(gridcolor="#1a1a1a", title="Volume"),
             height=480, margin=dict(l=10, r=10, t=20, b=10),
             legend=dict(bgcolor="rgba(0,0,0,0)"),
         )
@@ -528,9 +691,9 @@ elif page == "Spreads & Correlations":
                 st.metric("Period Avg Spread", f"${spread_avg:,.0f}")
 
             fig = line_chart(merged.index, merged["Spread_usd_mt"],
-                             "Arabica–Robusta Spread (USD/MT)", color="#9c27b0", height=300)
-            fig.add_hline(y=spread_avg, line_dash="dot", line_color="#4a5568",
-                          annotation_text="avg", annotation_font_color="#6b7fa3")
+                             "Arabica–Robusta Spread (USD/MT)", color="#ff00d7", height=300)
+            fig.add_hline(y=spread_avg, line_dash="dot", line_color="#2a2a2a",
+                          annotation_text="avg", annotation_font_color="#808080")
             st.plotly_chart(fig, use_container_width=True)
 
             st.markdown("---")
@@ -539,14 +702,14 @@ elif page == "Spreads & Correlations":
             merged["RC_idx"] = (merged["RC"] / merged["RC"].iloc[0]) * 100
             fig2 = go.Figure()
             fig2.add_trace(go.Scatter(x=merged.index, y=merged["KC_idx"],
-                                       line=dict(color="#00aaff", width=1.5), name="Arabica (KC)"))
+                                       line=dict(color="#00d7ff", width=1.5), name="Arabica (KC)"))
             fig2.add_trace(go.Scatter(x=merged.index, y=merged["RC_idx"],
                                        line=dict(color="#ff9800", width=1.5), name="Robusta (RC)"))
-            fig2.add_hline(y=100, line_dash="dot", line_color="#4a5568")
+            fig2.add_hline(y=100, line_dash="dot", line_color="#2a2a2a")
             fig2.update_layout(
-                paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-                xaxis=dict(gridcolor="#1a2332"),
-                yaxis=dict(gridcolor="#1a2332", title="Indexed (base=100)"),
+                paper_bgcolor="#000000", plot_bgcolor="#000000", font=dict(color="#ffffff"),
+                xaxis=dict(gridcolor="#1a1a1a"),
+                yaxis=dict(gridcolor="#1a1a1a", title="Indexed (base=100)"),
                 height=300, margin=dict(l=10, r=10, t=20, b=10),
                 legend=dict(bgcolor="rgba(0,0,0,0)"),
             )
@@ -568,10 +731,10 @@ elif page == "Spreads & Correlations":
             z=corr.values, x=corr.columns.tolist(), y=corr.index.tolist(),
             colorscale="RdBu", zmid=0, text=corr.values,
             texttemplate="%{text}", textfont=dict(size=12),
-            colorbar=dict(tickfont=dict(color="#c8d0e0")),
+            colorbar=dict(tickfont=dict(color="#ffffff")),
         ))
         fig3.update_layout(
-            paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
+            paper_bgcolor="#000000", plot_bgcolor="#000000", font=dict(color="#ffffff"),
             height=350, margin=dict(l=10, r=10, t=20, b=10),
         )
         st.plotly_chart(fig3, use_container_width=True)
@@ -636,12 +799,12 @@ elif page == "Basis Calculator":
     if not df_hist.empty and screen_price > 0:
         percentile = (df_hist["Close"] < screen_price).mean() * 100
         fig = line_chart(df_hist.index, df_hist["Close"],
-                         f"{'KC' if is_arabica else 'RC'} — 1 Year Historical", color="#00aaff", height=250)
-        fig.add_hline(y=screen_price, line_color="#ff5252", line_dash="dash",
-                      annotation_text=f"Current: {screen_price:.2f}", annotation_font_color="#ff5252")
+                         f"{'KC' if is_arabica else 'RC'} — 1 Year Historical", color="#00d7ff", height=250)
+        fig.add_hline(y=screen_price, line_color="#ff005f", line_dash="dash",
+                      annotation_text=f"Current: {screen_price:.2f}", annotation_font_color="#ff005f")
         if physical_price > 0:
-            fig.add_hline(y=physical_price, line_color="#00e676", line_dash="dash",
-                          annotation_text=f"Your Price: {physical_price:.2f}", annotation_font_color="#00e676")
+            fig.add_hline(y=physical_price, line_color="#00ff5f", line_dash="dash",
+                          annotation_text=f"Your Price: {physical_price:.2f}", annotation_font_color="#00ff5f")
         st.plotly_chart(fig, use_container_width=True)
         st.markdown(f"Current screen price is in the **{percentile:.0f}th percentile** of the past 12 months.")
 
@@ -742,7 +905,7 @@ elif page == "Weekly Price Entry":
         with cols[0]:
             st.markdown(
                 f"<div style='padding-top:6px;font-family:Courier New;font-size:13px;"
-                f"color:#00aaff;font-weight:bold'>{exp}</div>",
+                f"color:#00d7ff;font-weight:bold'>{exp}</div>",
                 unsafe_allow_html=True,
             )
         with cols[1]:
@@ -892,7 +1055,7 @@ elif page == "Weekly Price Entry":
                 if i >= len(sp_cols):
                     break
                 with sp_cols[i]:
-                    color = "#00e676" if row["spread"] >= 0 else "#ff5252"
+                    color = "#00ff5f" if row["spread"] >= 0 else "#ff005f"
                     sign  = "+" if row["spread"] >= 0 else ""
                     st.markdown(
                         f"<div style='background:#111827;border:1px solid #1e2d40;"
@@ -1024,7 +1187,7 @@ elif page == "Daily Price History":
             fig_kc.add_trace(go.Scatter(
                 x=kc.index, y=kc["settlement"],
                 mode="lines+markers", marker=dict(size=5),
-                line=dict(color="#00aaff", width=2), name="KC Settlement",
+                line=dict(color="#00d7ff", width=2), name="KC Settlement",
             ), row=1, col=1)
 
             # HI/LO range band
@@ -1035,7 +1198,7 @@ elif page == "Daily Price History":
                     fig_kc.add_trace(go.Scatter(
                         x=list(kc_hi.index) + list(kc_lo.index[::-1]),
                         y=list(kc_hi.values) + list(kc_lo.values[::-1]),
-                        fill="toself", fillcolor="rgba(0,170,255,0.07)",
+                        fill="toself", fillcolor="rgba(0,215,255,0.07)",
                         line=dict(color="rgba(0,0,0,0)"), name="Hi/Lo Range", showlegend=True,
                     ), row=1, col=1)
 
@@ -1043,7 +1206,7 @@ elif page == "Daily Price History":
                 ma20 = kc_settle.rolling(min(20, len(kc_settle))).mean()
                 fig_kc.add_trace(go.Scatter(
                     x=ma20.index, y=ma20,
-                    line=dict(color="#ffeb3b", width=1.2, dash="dot"), name="MA20",
+                    line=dict(color="#ffd700", width=1.2, dash="dot"), name="MA20",
                 ), row=1, col=1)
 
             if show_ma50 and len(kc_settle) >= 10:
@@ -1058,19 +1221,19 @@ elif page == "Daily Price History":
                 kc_chg = kc["change"].dropna()
                 fig_kc.add_trace(go.Bar(
                     x=kc_chg.index, y=kc_chg,
-                    marker_color=["#00e676" if v >= 0 else "#ff5252" for v in kc_chg],
+                    marker_color=["#00ff5f" if v >= 0 else "#ff005f" for v in kc_chg],
                     name="Daily Chg",
                 ), row=2, col=1)
-                fig_kc.add_hline(y=0, line_color="#1e2d40", row=2, col=1)
+                fig_kc.add_hline(y=0, line_color="#2a2a2a", row=2, col=1)
 
             fig_kc.update_layout(
-                paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-                xaxis2=dict(gridcolor="#1a2332"),
-                yaxis=dict(gridcolor="#1a2332", title="¢/lb"),
-                yaxis2=dict(gridcolor="#1a2332", title="Chg"),
+                paper_bgcolor="#000000", plot_bgcolor="#000000", font=dict(color="#ffffff"),
+                xaxis2=dict(gridcolor="#1a1a1a"),
+                yaxis=dict(gridcolor="#1a1a1a", title="¢/lb"),
+                yaxis2=dict(gridcolor="#1a1a1a", title="Chg"),
                 height=460, margin=dict(l=10, r=10, t=20, b=10),
                 legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=1.05),
-                xaxis=dict(gridcolor="#1a2332", rangeslider=dict(visible=False)),
+                xaxis=dict(gridcolor="#1a1a1a", rangeslider=dict(visible=False)),
             )
             st.plotly_chart(fig_kc, use_container_width=True)
         else:
@@ -1098,7 +1261,7 @@ elif page == "Daily Price History":
                     fig_rc.add_trace(go.Scatter(
                         x=list(rc_hi.index) + list(rc_lo.index[::-1]),
                         y=list(rc_hi.values) + list(rc_lo.values[::-1]),
-                        fill="toself", fillcolor="rgba(255,152,0,0.07)",
+                        fill="toself", fillcolor="rgba(255,215,0,0.07)",
                         line=dict(color="rgba(0,0,0,0)"), name="Hi/Lo Range",
                     ), row=1, col=1)
 
@@ -1106,33 +1269,33 @@ elif page == "Daily Price History":
                 ma20_rc = rc_settle.rolling(min(20, len(rc_settle))).mean()
                 fig_rc.add_trace(go.Scatter(
                     x=ma20_rc.index, y=ma20_rc,
-                    line=dict(color="#ffeb3b", width=1.2, dash="dot"), name="MA20",
+                    line=dict(color="#ffd700", width=1.2, dash="dot"), name="MA20",
                 ), row=1, col=1)
 
             if show_ma50 and len(rc_settle) >= 10:
                 ma50_rc = rc_settle.rolling(min(50, len(rc_settle))).mean()
                 fig_rc.add_trace(go.Scatter(
                     x=ma50_rc.index, y=ma50_rc,
-                    line=dict(color="#00e676", width=1.2, dash="dot"), name="MA50",
+                    line=dict(color="#00ff5f", width=1.2, dash="dot"), name="MA50",
                 ), row=1, col=1)
 
             if "change" in rc.columns:
                 rc_chg = rc["change"].dropna()
                 fig_rc.add_trace(go.Bar(
                     x=rc_chg.index, y=rc_chg,
-                    marker_color=["#00e676" if v >= 0 else "#ff5252" for v in rc_chg],
+                    marker_color=["#00ff5f" if v >= 0 else "#ff005f" for v in rc_chg],
                     name="Daily Chg",
                 ), row=2, col=1)
-                fig_rc.add_hline(y=0, line_color="#1e2d40", row=2, col=1)
+                fig_rc.add_hline(y=0, line_color="#2a2a2a", row=2, col=1)
 
             fig_rc.update_layout(
-                paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-                xaxis2=dict(gridcolor="#1a2332"),
-                yaxis=dict(gridcolor="#1a2332", title="USD/MT"),
-                yaxis2=dict(gridcolor="#1a2332", title="Chg"),
+                paper_bgcolor="#000000", plot_bgcolor="#000000", font=dict(color="#ffffff"),
+                xaxis2=dict(gridcolor="#1a1a1a"),
+                yaxis=dict(gridcolor="#1a1a1a", title="USD/MT"),
+                yaxis2=dict(gridcolor="#1a1a1a", title="Chg"),
                 height=460, margin=dict(l=10, r=10, t=20, b=10),
                 legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=1.05),
-                xaxis=dict(gridcolor="#1a2332", rangeslider=dict(visible=False)),
+                xaxis=dict(gridcolor="#1a1a1a", rangeslider=dict(visible=False)),
             )
             st.plotly_chart(fig_rc, use_container_width=True)
         else:
@@ -1161,35 +1324,35 @@ elif page == "Daily Price History":
 
                 fig_vs.add_trace(go.Scatter(
                     x=merged.index, y=merged["kc_idx"],
-                    line=dict(color="#00aaff", width=2), name="KC (indexed)",
+                    line=dict(color="#00d7ff", width=2), name="KC (indexed)",
                 ), row=1, col=1)
                 fig_vs.add_trace(go.Scatter(
                     x=merged.index, y=merged["rc_idx"],
                     line=dict(color="#ff9800", width=2), name="RC (indexed)",
                 ), row=1, col=1)
-                fig_vs.add_hline(y=100, line_color="#1e2d40", row=1, col=1)
+                fig_vs.add_hline(y=100, line_color="#2a2a2a", row=1, col=1)
 
                 spread_avg = float(merged["spread"].mean())
-                spread_colors = ["#00e676" if v >= 0 else "#ff5252" for v in merged["spread"]]
+                spread_colors = ["#00ff5f" if v >= 0 else "#ff005f" for v in merged["spread"]]
                 fig_vs.add_trace(go.Bar(
                     x=merged.index, y=merged["spread"],
                     marker_color=spread_colors, name="Spread (¢/lb)",
                 ), row=2, col=1)
                 fig_vs.add_trace(go.Scatter(
                     x=merged.index, y=merged["spread"].rolling(5).mean(),
-                    line=dict(color="#9c27b0", width=1.5, dash="dot"), name="5-day MA spread",
+                    line=dict(color="#ff00d7", width=1.5, dash="dot"), name="5-day MA spread",
                 ), row=2, col=1)
-                fig_vs.add_hline(y=spread_avg, line_color="#4a5568", line_dash="dot",
+                fig_vs.add_hline(y=spread_avg, line_color="#2a2a2a", line_dash="dot",
                                  annotation_text=f"avg {spread_avg:.2f}",
-                                 annotation_font_color="#6b7fa3", row=2, col=1)
-                fig_vs.add_hline(y=0, line_color="#1e2d40", row=2, col=1)
+                                 annotation_font_color="#808080", row=2, col=1)
+                fig_vs.add_hline(y=0, line_color="#2a2a2a", row=2, col=1)
 
                 fig_vs.update_layout(
-                    paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-                    xaxis=dict(gridcolor="#1a2332", rangeslider=dict(visible=False)),
-                    xaxis2=dict(gridcolor="#1a2332"),
-                    yaxis=dict(gridcolor="#1a2332"),
-                    yaxis2=dict(gridcolor="#1a2332", title="¢/lb"),
+                    paper_bgcolor="#000000", plot_bgcolor="#000000", font=dict(color="#ffffff"),
+                    xaxis=dict(gridcolor="#1a1a1a", rangeslider=dict(visible=False)),
+                    xaxis2=dict(gridcolor="#1a1a1a"),
+                    yaxis=dict(gridcolor="#1a1a1a"),
+                    yaxis2=dict(gridcolor="#1a1a1a", title="¢/lb"),
                     height=480, margin=dict(l=10, r=10, t=30, b=10),
                     legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=1.05),
                 )
@@ -1207,7 +1370,7 @@ elif page == "Daily Price History":
                 if not kc_oi.empty:
                     fig_oi.add_trace(go.Scatter(
                         x=kc_oi.index, y=kc_oi,
-                        mode="lines+markers", line=dict(color="#00aaff", width=2),
+                        mode="lines+markers", line=dict(color="#00d7ff", width=2),
                         marker=dict(size=5), name="KC OI", yaxis="y1",
                     ))
             if "open_interest" in rc.columns:
@@ -1219,10 +1382,10 @@ elif page == "Daily Price History":
                         marker=dict(size=5), name="RC OI", yaxis="y2",
                     ))
             fig_oi.update_layout(
-                paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", font=dict(color="#c8d0e0"),
-                xaxis=dict(gridcolor="#1a2332"),
-                yaxis=dict(gridcolor="#1a2332", title="KC Open Interest", side="left"),
-                yaxis2=dict(gridcolor="#1a2332", title="RC Open Interest",
+                paper_bgcolor="#000000", plot_bgcolor="#000000", font=dict(color="#ffffff"),
+                xaxis=dict(gridcolor="#1a1a1a"),
+                yaxis=dict(gridcolor="#1a1a1a", title="KC Open Interest", side="left"),
+                yaxis2=dict(gridcolor="#1a1a1a", title="RC Open Interest",
                             overlaying="y", side="right", showgrid=False),
                 height=280, margin=dict(l=10, r=10, t=20, b=10),
                 legend=dict(bgcolor="rgba(0,0,0,0)"),
@@ -1339,7 +1502,7 @@ elif page == "TradingView Charts":
           "theme": "dark",
           "style": "{style_tv}",
           "locale": "en",
-          "toolbar_bg": "#0d1117",
+          "toolbar_bg": "#000000",
           "enable_publishing": false,
           "hide_top_toolbar": false,
           "hide_legend": false,
@@ -1379,7 +1542,7 @@ elif page == "TradingView Charts":
           "theme": "dark",
           "style": "{style_tv}",
           "locale": "en",
-          "toolbar_bg": "#0d1117",
+          "toolbar_bg": "#000000",
           "enable_publishing": false,
           "hide_top_toolbar": false,
           "hide_legend": false,
@@ -1405,7 +1568,7 @@ elif page == "TradingView Charts":
           "theme": "dark",
           "style": "{style_tv}",
           "locale": "en",
-          "toolbar_bg": "#0d1117",
+          "toolbar_bg": "#000000",
           "enable_publishing": false,
           "hide_top_toolbar": false,
           "hide_legend": false,
@@ -1419,11 +1582,11 @@ elif page == "TradingView Charts":
     """
 
     with side_col1:
-        st.markdown("<p style='color:#00aaff;font-family:Courier New;font-size:12px;margin-bottom:4px'>ARABICA (KC1!) — ICEUS</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#00d7ff;font-family:Menlo, Monaco, Courier New;font-size:12px;margin-bottom:4px'>ARABICA (KC1!) — ICEUS</p>", unsafe_allow_html=True)
         st.components.v1.html(kc_chart_html, height=390, scrolling=False)
 
     with side_col2:
-        st.markdown("<p style='color:#ff9800;font-family:Courier New;font-size:12px;margin-bottom:4px'>ROBUSTA (RC1!) — ICE LIFFE</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#ffd700;font-family:Menlo, Monaco, Courier New;font-size:12px;margin-bottom:4px'>ROBUSTA (RC1!) — ICE LIFFE</p>", unsafe_allow_html=True)
         st.components.v1.html(rc_chart_html, height=390, scrolling=False)
 
     st.markdown("---")
@@ -1446,7 +1609,7 @@ elif page == "TradingView Charts":
               "theme": "dark",
               "style": "2",
               "locale": "en",
-              "toolbar_bg": "#0d1117",
+              "toolbar_bg": "#000000",
               "enable_publishing": false,
               "hide_top_toolbar": true,
               "hide_legend": true,
@@ -1458,9 +1621,9 @@ elif page == "TradingView Charts":
         """
 
     with macro_col1:
-        st.markdown("<p style='color:#00e676;font-family:Courier New;font-size:12px;margin-bottom:4px'>BRL/USD</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#00ff5f;font-family:Menlo, Monaco, Courier New;font-size:12px;margin-bottom:4px'>BRL/USD</p>", unsafe_allow_html=True)
         st.components.v1.html(mini_tv_chart("tv_brl", "FX:BRLUSD"), height=290, scrolling=False)
 
     with macro_col2:
-        st.markdown("<p style='color:#ff9800;font-family:Courier New;font-size:12px;margin-bottom:4px'>USD INDEX (DXY)</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#ffd700;font-family:Menlo, Monaco, Courier New;font-size:12px;margin-bottom:4px'>USD INDEX (DXY)</p>", unsafe_allow_html=True)
         st.components.v1.html(mini_tv_chart("tv_dxy", "TVC:DXY"), height=290, scrolling=False)
