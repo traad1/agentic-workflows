@@ -104,6 +104,17 @@ def fetch(ticker: str, period: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=300)
 def fetch_quote(ticker: str) -> dict:
+    # London Robusta isn't on Yahoo — fall through to investiny for the quote.
+    if ticker == "RC=F":
+        df = fetch_robusta("3mo")
+        if df.empty or "Close" not in df.columns or len(df) < 2:
+            return {"price": None, "change": 0, "pct": 0, "prev": None}
+        price = float(df["Close"].iloc[-1])
+        prev  = float(df["Close"].iloc[-2])
+        change = price - prev
+        pct    = (change / prev) * 100 if prev else 0
+        return {"price": price, "change": change, "pct": pct, "prev": prev}
+
     t = yf.Ticker(ticker)
     info = t.fast_info
     try:
@@ -114,6 +125,36 @@ def fetch_quote(ticker: str) -> dict:
         return {"price": price, "change": change, "pct": pct, "prev": prev}
     except Exception:
         return {"price": None, "change": 0, "pct": 0, "prev": None}
+
+
+@st.cache_data(ttl=300)
+def fetch_robusta(period: str) -> pd.DataFrame:
+    """Fetch London Robusta (ICE) OHLC via investiny — Yahoo dropped this feed."""
+    days_map = {"1d": 7, "5d": 14, "1mo": 45, "3mo": 100, "1y": 380, "2y": 750}
+    days = days_map.get(period, 100)
+    try:
+        from investiny import historical_data
+        end   = datetime.today()
+        start = end - timedelta(days=days)
+        data  = historical_data(
+            investing_id=8911,   # ICE Robusta continuous (RC)
+            from_date=start.strftime("%m/%d/%Y"),
+            to_date=end.strftime("%m/%d/%Y"),
+            interval="D",
+        )
+        if not data or not data.get("date"):
+            return pd.DataFrame()
+        df = pd.DataFrame({
+            "Open":  data["open"],
+            "High":  data["high"],
+            "Low":   data["low"],
+            "Close": data["close"],
+        }, index=pd.to_datetime(data["date"], format="%m/%d/%Y"))
+        df.index.name = "Date"
+        return df.sort_index()
+    except Exception as e:
+        st.warning(f"Robusta data fetch failed: {e}")
+        return pd.DataFrame()
 
 def candlestick_chart(df: pd.DataFrame, title: str, color: str = "#00aaff") -> go.Figure:
     fig = go.Figure()
@@ -313,7 +354,7 @@ if page == "Market Overview":
 
     # ── London Robusta — full-width candle chart ──────────────────────────────
     st.markdown('<div class="section-label">LONDON ROBUSTA — RC FUTURES (USD/MT)</div>', unsafe_allow_html=True)
-    df_rc = fetch("RC=F", period)
+    df_rc = fetch_robusta(period)
     st.plotly_chart(
         large_candle_chart(df_rc,
                            f"Robusta Coffee — {timeframe_label}",
@@ -426,7 +467,7 @@ elif page == "Robusta Deep Dive":
                   delta=f"{q['change']:+.2f}" if q['price'] else None)
     with c2:
         st.metric("Prev Close", f"{q['prev']:.2f}" if q.get("prev") else "N/A")
-    df_rc_1y = fetch("RC=F", "1y")
+    df_rc_1y = fetch_robusta("1y")
     with c3:
         if not df_rc_1y.empty:
             st.metric("52W High", f"{df_rc_1y['High'].max():.2f}")
@@ -435,7 +476,7 @@ elif page == "Robusta Deep Dive":
             st.metric("52W Low", f"{df_rc_1y['Low'].min():.2f}")
 
     st.markdown("---")
-    df_rc = fetch("RC=F", period)
+    df_rc = fetch_robusta(period)
     if not df_rc.empty:
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                             row_heights=[0.75, 0.25], vertical_spacing=0.03)
@@ -469,7 +510,7 @@ elif page == "Spreads & Correlations":
     st.markdown('<div class="section-label">ARABICA / ROBUSTA SPREAD (ARBING THE DIFFERENTIAL)</div>', unsafe_allow_html=True)
 
     df_kc = fetch("KC=F", period)
-    df_rc = fetch("RC=F", period)
+    df_rc = fetch_robusta(period)
 
     if not df_kc.empty and not df_rc.empty:
         merged = pd.concat([df_kc["Close"].rename("KC"), df_rc["Close"].rename("RC")], axis=1).dropna()
@@ -517,8 +558,8 @@ elif page == "Spreads & Correlations":
                     "BRL/USD": "BRL=X", "DXY": "DX-Y.NYB", "Sugar": "SB=F"}
     frames = {}
     for name, tkr in tickers_corr.items():
-        df = fetch(tkr, "1y")
-        if not df.empty:
+        df = fetch_robusta("1y") if tkr == "RC=F" else fetch(tkr, "1y")
+        if not df.empty and "Close" in df.columns:
             frames[name] = df["Close"]
     if len(frames) > 1:
         combined = pd.DataFrame(frames).dropna()

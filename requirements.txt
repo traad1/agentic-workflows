@@ -6,3 +6,4 @@ plotly>=5.20.0
 numpy>=1.26.0
 gspread>=6.0.0
 google-auth>=2.0.0
+investiny>=0.7.0
