@@ -783,17 +783,26 @@ elif page == "Daily Price History":
         df_all["trade_date"] = pd.to_datetime(df_all["trade_date"])
 
         # ── Filters bar ──────────────────────────────────────────────────────
+        all_expiries = sorted(df_all["expiry_code"].dropna().unique())
+
+        if not all_expiries:
+            st.info("No settlements saved yet. Use **Weekly Price Entry** to add data.")
+            st.stop()
+
         f1, f2, f3 = st.columns([2, 2, 2])
 
-        all_expiries = sorted(df_all["expiry_code"].dropna().unique())
         with f1:
-            sel_expiry = st.selectbox("Expiry", all_expiries,
-                                      index=0 if all_expiries else 0)
+            sel_expiry = st.selectbox("Expiry", all_expiries, index=0)
+
+        # Compute date range for the selected expiry so the slider max is meaningful
+        df_sel_pre = df_all[df_all["expiry_code"] == all_expiries[0]]
+        expiry_dates = sorted(df_sel_pre["trade_date"].dropna().unique())
+        n_available  = max(len(expiry_dates), 1)
+
         with f2:
-            all_dates = sorted(df_all["trade_date"].dropna().unique())
-            n_days = st.slider("Days to show", min_value=5,
-                               max_value=max(len(all_dates), 5),
-                               value=min(30, len(all_dates)))
+            n_days = st.slider("Days to show", min_value=1,
+                               max_value=n_available,
+                               value=min(30, n_available))
         with f3:
             show_ma20 = st.checkbox("MA 20", value=True)
             show_ma50 = st.checkbox("MA 50", value=True)
@@ -812,30 +821,34 @@ elif page == "Daily Price History":
 
         k1, k2, k3, k4, k5, k6 = st.columns(6)
 
-        def _latest(series): return float(series.iloc[-1]) if len(series) else None
-        def _chg(series):    return float(series.iloc[-1] - series.iloc[-2]) if len(series) >= 2 else None
-        def _pct(series):    return float((series.iloc[-1]/series.iloc[-2]-1)*100) if len(series) >= 2 else None
+        def _latest(s): return float(s.iloc[-1]) if len(s) else None
+        def _chg(s):    return float(s.iloc[-1] - s.iloc[-2]) if len(s) >= 2 else None
+        def _fmt(v, fmt): return fmt % v if v is not None else "—"
 
-        kc_settle = kc["settlement"].dropna()
-        rc_settle = rc["settlement"].dropna()
+        kc_settle = kc["settlement"].dropna() if not kc.empty and "settlement" in kc.columns else pd.Series(dtype=float)
+        rc_settle = rc["settlement"].dropna() if not rc.empty and "settlement" in rc.columns else pd.Series(dtype=float)
         rc_clb    = rc_settle / _KC_TO_MT
+
+        # Align KC and RC on shared dates for spread calculation
+        spread_series = pd.concat([kc_settle.rename("kc"), rc_clb.rename("rc")], axis=1).dropna()
 
         with k1:
             v = _latest(kc_settle)
             d = _chg(kc_settle)
-            st.metric("KC Last (¢/lb)", f"{v:.2f}" if v else "—",
+            st.metric("KC Last (¢/lb)", _fmt(v, "%.2f"),
                       delta=f"{d:+.2f}" if d is not None else None)
         with k2:
             v = _latest(rc_settle)
             d = _chg(rc_settle)
-            st.metric("RC Last (USD/MT)", f"{v:.0f}" if v else "—",
+            st.metric("RC Last (USD/MT)", _fmt(v, "%.0f"),
                       delta=f"{d:+.0f}" if d is not None else None)
         with k3:
-            if len(kc_settle) and len(rc_clb):
-                spread = float(kc_settle.iloc[-1] - rc_clb.iloc[-1]) if (len(kc_settle) and len(rc_clb)) else None
-                prev_spread = float(kc_settle.iloc[-2] - rc_clb.iloc[-2]) if (len(kc_settle) >= 2 and len(rc_clb) >= 2) else None
-                d = round(spread - prev_spread, 2) if (spread is not None and prev_spread is not None) else None
-                st.metric("Spread KC−RC (¢/lb)", f"{spread:+.2f}" if spread is not None else "—",
+            if len(spread_series) >= 1:
+                sp_vals = spread_series["kc"] - spread_series["rc"]
+                cur  = float(sp_vals.iloc[-1])
+                prev = float(sp_vals.iloc[-2]) if len(sp_vals) >= 2 else None
+                d    = round(cur - prev, 2) if prev is not None else None
+                st.metric("Spread KC−RC (¢/lb)", f"{cur:+.2f}",
                           delta=f"{d:+.2f}" if d is not None else None)
             else:
                 st.metric("Spread KC−RC (¢/lb)", "—")
