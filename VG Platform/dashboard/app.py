@@ -150,6 +150,82 @@ def candlestick_chart(df: pd.DataFrame, title: str, color: str = "#00aaff") -> g
     )
     return fig
 
+def large_candle_chart(df: pd.DataFrame, title: str, *,
+                        price_unit: str = "¢/lb",
+                        accent_color: str = "#00aaff",
+                        height: int = 520) -> go.Figure:
+    """Full-width candle chart with MA20/MA50 overlays and a volume sub-panel."""
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                         row_heights=[0.78, 0.22], vertical_spacing=0.03)
+    if df.empty:
+        fig.update_layout(
+            title=dict(text=title + " — no data", font=dict(color="#c8d0e0", size=15)),
+            paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117", height=height,
+        )
+        return fig
+
+    has_ohlc = all(c in df.columns for c in ["Open","High","Low","Close"])
+    if has_ohlc:
+        fig.add_trace(go.Candlestick(
+            x=df.index, open=df["Open"], high=df["High"],
+            low=df["Low"], close=df["Close"],
+            increasing_line_color="#00e676",
+            decreasing_line_color="#ff5252",
+            increasing_fillcolor="#00e676",
+            decreasing_fillcolor="#ff5252",
+            name="Price",
+            showlegend=False,
+        ), row=1, col=1)
+    else:
+        fig.add_trace(go.Scatter(x=df.index, y=df["Close"],
+                                  line=dict(color=accent_color, width=1.5),
+                                  name="Close"), row=1, col=1)
+
+    # Moving averages
+    if "Close" in df.columns:
+        if len(df) >= 20:
+            ma20 = df["Close"].rolling(20).mean()
+            fig.add_trace(go.Scatter(x=df.index, y=ma20,
+                                      line=dict(color="#ffeb3b", width=1.2, dash="dot"),
+                                      name="MA 20"), row=1, col=1)
+        if len(df) >= 50:
+            ma50 = df["Close"].rolling(50).mean()
+            fig.add_trace(go.Scatter(x=df.index, y=ma50,
+                                      line=dict(color="#ff9800", width=1.2, dash="dot"),
+                                      name="MA 50"), row=1, col=1)
+
+    # Volume
+    if "Volume" in df.columns and df["Volume"].sum() > 0:
+        vol_colors = []
+        if has_ohlc:
+            for o, c in zip(df["Open"], df["Close"]):
+                vol_colors.append("rgba(0,230,118,0.45)" if c >= o else "rgba(255,82,82,0.45)")
+        else:
+            vol_colors = "rgba(0,170,255,0.4)"
+        fig.add_trace(go.Bar(x=df.index, y=df["Volume"],
+                              marker_color=vol_colors, name="Volume",
+                              showlegend=False), row=2, col=1)
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(color="#e2e8f0", size=16,
+                                          family="Courier New"), x=0.01),
+        paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1117",
+        font=dict(color="#c8d0e0"),
+        xaxis=dict(gridcolor="#1a2332", showgrid=True, rangeslider=dict(visible=False)),
+        xaxis2=dict(gridcolor="#1a2332", showgrid=True),
+        yaxis=dict(gridcolor="#1a2332", showgrid=True, title=price_unit, side="right"),
+        yaxis2=dict(gridcolor="#1a2332", showgrid=False, title="Vol", side="right",
+                     tickfont=dict(size=9, color="#6b7fa3")),
+        margin=dict(l=10, r=60, t=50, b=10),
+        legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h",
+                     y=1.02, x=0.99, xanchor="right",
+                     font=dict(size=11)),
+        height=height,
+        hovermode="x unified",
+    )
+    return fig
+
+
 def line_chart(x, y, title: str, color: str = "#00aaff", height: int = 260) -> go.Figure:
     fig = go.Figure(go.Scatter(
         x=x, y=y,
@@ -220,28 +296,51 @@ if page == "Market Overview":
                 st.metric(label=name, value="N/A", delta="--")
 
     st.markdown("---")
-    st.markdown('<div class="section-label">PRICE CHARTS</div>', unsafe_allow_html=True)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        df_kc = fetch("KC=F", period)
-        st.plotly_chart(candlestick_chart(df_kc, f"Arabica Coffee (KC) — {timeframe_label}"),
-                        use_container_width=True)
-    with col2:
-        df_rc = fetch("RC=F", period)
-        st.plotly_chart(candlestick_chart(df_rc, f"Robusta Coffee (RC) — {timeframe_label}", color="#ff9800"),
-                        use_container_width=True)
+    # ── NY Arabica — full-width candle chart ──────────────────────────────────
+    st.markdown('<div class="section-label">NY ARABICA — KC FUTURES (¢/lb)</div>', unsafe_allow_html=True)
+    df_kc = fetch("KC=F", period)
+    st.plotly_chart(
+        large_candle_chart(df_kc,
+                           f"Arabica Coffee — {timeframe_label}",
+                           price_unit="¢/lb",
+                           accent_color="#00aaff",
+                           height=520),
+        use_container_width=True,
+    )
 
-    col3, col4 = st.columns(2)
-    with col3:
+    st.markdown("---")
+
+    # ── London Robusta — full-width candle chart ──────────────────────────────
+    st.markdown('<div class="section-label">LONDON ROBUSTA — RC FUTURES (USD/MT)</div>', unsafe_allow_html=True)
+    df_rc = fetch("RC=F", period)
+    st.plotly_chart(
+        large_candle_chart(df_rc,
+                           f"Robusta Coffee — {timeframe_label}",
+                           price_unit="USD/MT",
+                           accent_color="#ff9800",
+                           height=520),
+        use_container_width=True,
+    )
+
+    st.markdown("---")
+
+    # ── Macro context: BRL/USD and DXY ────────────────────────────────────────
+    st.markdown('<div class="section-label">MACRO CONTEXT</div>', unsafe_allow_html=True)
+    macro_l, macro_r = st.columns(2)
+    with macro_l:
         df_brl = fetch("BRL=X", period)
         if not df_brl.empty:
-            st.plotly_chart(line_chart(df_brl.index, df_brl["Close"], "BRL/USD Exchange Rate", color="#00e676"),
+            st.plotly_chart(line_chart(df_brl.index, df_brl["Close"],
+                                        "BRL/USD Exchange Rate",
+                                        color="#00e676", height=320),
                             use_container_width=True)
-    with col4:
+    with macro_r:
         df_dxy = fetch("DX-Y.NYB", period)
         if not df_dxy.empty:
-            st.plotly_chart(line_chart(df_dxy.index, df_dxy["Close"], "USD Index (DXY)", color="#ff9800"),
+            st.plotly_chart(line_chart(df_dxy.index, df_dxy["Close"],
+                                        "USD Index (DXY)",
+                                        color="#ff9800", height=320),
                             use_container_width=True)
 
 # ═════════════════════════════════════════════════════════════════════════════
